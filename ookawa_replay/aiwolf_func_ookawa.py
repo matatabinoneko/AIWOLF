@@ -109,6 +109,7 @@ class data_info():
         self.comingout = ''
         self.myresult = ''
         self.not_reported = False
+        self.do_fake_report = False
         self.done_last_commingout = False
         self.vote_declare = False
 
@@ -140,6 +141,7 @@ class data_info():
                 return target
 
     def selectAgent(self,target_role):
+        #返り値のインデックスは１始まり
         if self.each_model == True:
             use_model = self.base_info["day"]
         else:
@@ -158,16 +160,18 @@ class data_info():
             role = self.num_to_role[role]
             est_role_list.append(role)
 
-        # print(est_werewolf_list)
+        # print("before",self.base_info["day"] ,est_werewolf_list)
         # print(est_role_list)
         if target_role == "WEREWOLF":
             tmp = [x for i,x in zip(est_role_list,est_werewolf_list) if i == "WEREWOLF"]
-            if len(tmp) != 0 and not(len(tmp)==1) and tmp[0][1]==self.base_info["agentIdx"]:
+            if len(tmp) != 0 and not((len(tmp)==1) and tmp[0][1]==self.base_info["agentIdx"]):
                 est_werewolf_list = tmp
+            # print("after",est_werewolf_list)
             est_werewolf_list = sorted(est_werewolf_list,reverse=True)
             for _,target in est_werewolf_list:
                 if self.alive_list[target-1] == 0 and target != self.base_info['agentIdx']:
                     return target
+            return -1
     
         elif target_role == "SEER":
             # print([x for i,x in zip(est_role_list,est_werewolf_list)])
@@ -340,7 +344,10 @@ class data_info():
         # FAKE DIVINE
         if self.fake_role == 'SEER':
             self.not_reported = True
-            idx = self.selectAgent("WEREWOLF")+1
+            idx = self.selectAgent("WEREWOLF")
+            print(idx)
+            if idx == -1:
+                idx = self.randomSelect()
             self.myresult = 'DIVINED Agent[' + "{0:02d}".format(idx) + '] ' + 'HUMAN'
 
     def updateVector(self):
@@ -556,7 +563,8 @@ class data_info():
             # elif self.diff_data["type"][i] == "":
 
         # self.updateTalk()
-        if self.fake_role != '' and self.not_reported == False:
+        if self.fake_role != '' and self.do_fake_report== False:
+            self.do_fake_report = True
             self.getFakeResult()
 
         if request == 'DAILY_INITIALIZE' and 2 <= base_info["day"]:
@@ -565,6 +573,9 @@ class data_info():
         elif request == "DAILY_FINISH" and 1 <= base_info["day"]:
             #0:自分が人間判定された数 1:自分が人狼判定された数 2:占い師の名乗り出た順番 3:報告した人間の数 4:報告した人狼の数 5:発言と投票先が変わった数．6:生死(#alive:0 attacked:1 execute:-1)　7~11:肯定的意見の数　12~16:否定的意見の数        
             self.updateVector()
+            if self.base_info['myRole'] == 'POSSESSED':
+                self.do_fake_report = False
+
 
     def talk(self):
         if(self.base_info['myRole']=="VILLAGER"):
@@ -584,13 +595,19 @@ class data_info():
             if(self.not_reported == True):
                 self.not_reported = False
                 return self.myresult
+            if self.have_ever_vote == False:
+                self.have_ever_vote = True
+                return cb.vote(self.selectAgent("WEREWOLF"))
+            return cb.over()
         elif self.base_info['myRole'] == 'POSSESSED':
             if(self.done_last_commingout == False):
                 self.done_last_commingout = True
                 return cb.comingout((self.base_info['agentIdx']),self.fake_role)
             if(self.not_reported == True):
+                self.do_fake_report = True
                 self.not_reported = False
                 return self.myresult
+            return cb.over()
         elif self.base_info['myRole'] == 'WEREWOLF':
             if(self.have_ever_vote == False):
                 self.have_ever_vote = True
@@ -598,6 +615,16 @@ class data_info():
                 return cb.vote(self.selectAgent("WEREWOLF"))
             else:
                 return cb.over()
+        elif self.base_info['myRole'] == 'MEDIUM':
+            if(self.done_last_commingout == False):
+                self.done_last_commingout = True
+                return cb.comingout((self.base_info['agentIdx']),"MEDIUM")
+            if(self.not_reported == True):
+                self.not_reported = False
+                return self.myresult
+            if self.have_ever_vote == False:
+                self.have_ever_vote = True
+                return cb.vote(self.selectAgent("WEREWOLF"))                
 
         return cb.over()
 

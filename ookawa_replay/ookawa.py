@@ -26,7 +26,7 @@ class SampleAgent(object):
     def __init__(self, agent_name):
         ## myname ##
         self.myname = agent_name
-        self.w_data = data_info(agent_num=5,daily_train=False,player_train=False,train_times=1000,each_model=True)
+        self.w_data = data_info(agent_num=10,daily_train=True,player_train=True,train_times=10000,each_model=True)
 
 
 
