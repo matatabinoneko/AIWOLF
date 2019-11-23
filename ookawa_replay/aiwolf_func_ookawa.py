@@ -24,8 +24,7 @@ class data_info():
         # self.daily_vector = np.hstack((self.co_list,self.divined_list.transpose((1,0,2)).reshape(self.agent_num,-1),self.seer_co_oder.reshape(-1,1),self.vote_another_people.reshape(-1,1),self.alive_list.reshape(-1,1),self.ag_esti_list,self.disag_esti_list))
 
 
-    def __init__(self,agent_num=5,daily_train=False,player_train=False,train_times=1000,each_model=True):
-        super().__init__()
+    def __init__(self,agent_num=5,daily_train=False,player_train=False,train_times=1000,each_model=False):
         self.Time = time.time()
         self.agent_num = agent_num
         self.daily_train = daily_train
@@ -41,6 +40,14 @@ class data_info():
             self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2,"MEDIUM":5}
         else:
             self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2,"POSSESSED":3,"BODYGUARD":4,"MEDIUM":5}
+
+        if self.agent_num == 5:
+            self.utiwake = {"VILLAGER":2,"SEER":1,"POSSESSED":1,"WEREWOLF":1}
+        elif self.agent_num == 6:
+            self.utiwake = {"VILLAGER":3,"SEER":1,"POSSESSED":1,"WEREWOLF":1}
+        # elif self.agent_num == 10:
+        #     self.agent_num == 
+
         self.num_to_role = {v:k for k,v in self.role_to_num.items()}
         self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
         self.werewolf_list = ["POSSESSED","WEREWOLF"]
@@ -48,7 +55,9 @@ class data_info():
 
 
         self.declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
+        self.last_declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
         self.vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
+        self.last_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
         self.estimate_list = np.zeros((self.agent_num,self.agent_num,self.role_num),dtype=np.int32) 
         self.co_list = np.zeros((self.agent_num,self.role_num),dtype=np.int32) 
         self.seer_co_oder = np.zeros(self.agent_num,dtype=np.int32)
@@ -62,6 +71,11 @@ class data_info():
         self.ag_esti_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
         self.disag_esti_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
 
+        #新たな特徴量
+        self.myrole = np.zeros((self.role_num,1),dtype=np.int32)
+        self.talk_cnt = np.zeros((self.agent_num,1),dtype=np.int32)
+
+
         self.createDailyVector()
         self.player_vector_length = self.daily_vector.shape[1] + 2
         self.daily_vector_length = (self.player_vector_length - 2)*self.agent_num + 2
@@ -73,7 +87,7 @@ class data_info():
         self.using_alive_info_cnt_daily  = 0
         self.using_alive_info_cnt_player = 0
 
-        self.utiwake = 0
+        self.utiwake_cnt = 0
 
         self.daily_net = [predict_werewolf(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num) for i in range(self.agent_num)]
         self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.agent_num)]
@@ -91,6 +105,12 @@ class data_info():
             if self.player_train == False:
                 serializers.load_npz("./player_model/agent"+str(self.agent_num)+"/one_model/ookawa_train_player_num_"+str(self.agent_num)+"_train_10000.net", self.player_net[0].net)
 
+        self.graph_name = 'ookawa_' 
+        self.graph_name += "agent_"+str(self.agent_num)+"_"
+        self.graph_name += "train_" if self.daily_train == True else "test_"
+        self.graph_name += str(self.train_times)+"_"
+        self.graph_name += "each_model" if self.each_model == True else "one_model"
+
     def initialize(self, base_info, diff_data, game_setting):
         self.base_info = base_info
         self.diff_data = diff_data
@@ -99,6 +119,8 @@ class data_info():
         self.declaration_vote_list.fill(0)
         self.vote_list.fill(0)
         self.daily_vector.fill(0)
+        self.last_declaration_vote_list.fill(0)
+        self.last_vote_list.fill(0)
         self.estimate_list.fill(0)
         self.co_list.fill(0)
         self.seer_co_cnt = 1
@@ -123,6 +145,8 @@ class data_info():
 
         self.alive_list.fill(0)
         # self.alive_list[:,0] = 1
+
+        self.myrole[self.role_to_num[self.base_info["myRole"]]] = 1
 
 
         self.ag_esti_list.fill(0)
@@ -205,6 +229,9 @@ class data_info():
             '''talkのtext部分を解釈可能にparse'''
             talk_texts = talk_texts.split(' ')
             # print(talk_texts)
+            if not talk_texts[0] in ["Skip","Over"]:
+                self.talk_cnt[agent] += 1
+
             if(talk_texts[0]=="Skip"):
                 None
             elif(talk_texts[0]=="Over"):
@@ -345,7 +372,6 @@ class data_info():
         if self.fake_role == 'SEER':
             self.not_reported = True
             idx = self.selectAgent("WEREWOLF")
-            print(idx)
             if idx == -1:
                 idx = self.randomSelect()
             self.myresult = 'DIVINED Agent[' + "{0:02d}".format(idx) + '] ' + 'HUMAN'
@@ -379,11 +405,7 @@ class data_info():
 
     def plot_accu_loss(self):
         fig = plt.figure(figsize=(12.0,8.0))
-        graph_name = "agent_"+str(self.agent_num)+"_"
-        graph_name += "train_" if self.daily_train == True else "test_"
-        graph_name += str(self.train_times)+"_"
-        graph_name += "each_model" if self.each_model == True else "one_model"
-        fig.suptitle('ookawa_'+graph_name, fontsize=20)
+        fig.suptitle(self.graph_name, fontsize=20)
         daily_loss = fig.add_subplot(2,2,1)
         plt.title("daily_loss")
         daily_accu = fig.add_subplot(2,2,2)
@@ -411,7 +433,7 @@ class data_info():
                 plt.legend()
         # plt.show()
         os.makedirs("graph_folder", exist_ok=True)
-        plt.savefig("graph_folder/"+graph_name+'.png')
+        plt.savefig("graph_folder/"+self.graph_name+'.png')
 
     def display_game_result(self):
         sum_role_pred = 0
@@ -429,11 +451,11 @@ class data_info():
 
         for i in range(len(self.daily_net)):
             if 0 < len(self.daily_net[i].memory.accuracy_memory):
-                print(len(self.player_net[i].memory.accuracy_memory))
+                # print(len(self.player_net[i].memory.accuracy_memory))
                 print("day{:<2}  daily_accuracy:{:<.2f}  player_accuracy:{:<.2f}".format(i,np.mean(self.daily_net[i].memory.accuracy_memory),np.mean(self.player_net[i].memory.accuracy_memory)))
         
-        print(self.using_alive_info_cnt_daily, self.using_alive_info_cnt_player)
-        print("correct utiwake is ",self.utiwake)
+        # print(self.using_alive_info_cnt_daily, self.using_alive_info_cnt_player)
+        print("correct utiwake is ",self.utiwake_cnt)
 
     def update_predict_result(self,y,t):
         for y_role, t_role in zip(y,t):
@@ -443,8 +465,8 @@ class data_info():
             if y_role == t_role:
                 self.correct_predict_cnt[self.num_to_role[t_role]]+=1
 
-        if collections.Counter([self.num_to_role[role] for role in y]) == {"VILLAGER":2,"SEER":1,"POSSESSED":1,"WEREWOLF":1}:
-            self.utiwake+= 1
+        if collections.Counter([self.num_to_role[role] for role in y]) == self.utiwake:
+            self.utiwake_cnt+= 1
 
         for agent,y_role in enumerate(y):
             if self.num_to_role[y_role] in self.werewolf_list:
@@ -693,9 +715,9 @@ class data_info():
 
             if self.player_train == False:
                 self.display_game_result()
-            else:
-                self.save_one_model()
-                self.save_each_model()
+            # else:
+                # self.save_one_model()
+                # self.save_each_model()
 
             self.plot_accu_loss()
 
@@ -703,10 +725,11 @@ class data_info():
 
         if self.train_cnt%(self.train_times//10) == 0:
             print("train:{:<10}time is {:<10.2f}".format(self.train_cnt,time.time()-self.Time))
-            # if self.each_model == True:
-            #     self.save_each_model()
-            # else:
-            #     self.save_one_model()
+            if self.daily_train == True:
+                if self.each_model == True:
+                    self.save_each_model()
+                else:
+                    self.save_one_model()
 
 
 class MLP(chainer.Chain):
