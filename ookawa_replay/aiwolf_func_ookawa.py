@@ -724,7 +724,8 @@ class data_info():
         self.train_cnt += 1
 
         if self.train_cnt%(self.train_times//10) == 0:
-            print("train:{:<10}time is {:<10.2f}".format(self.train_cnt,time.time()-self.Time))
+            sec = round(time.time()-self.Time)
+            print("train:{:<10}time is {:<2}hour {:<2}minutes {:<2}sec".format(self.train_cnt,sec//3600,(sec%3600)//60,(sec%60)))
             if self.daily_train == True:
                 if self.each_model == True:
                     self.save_each_model()
@@ -756,12 +757,18 @@ class Memory():
         self.t_memory = []
         self.loss_memory = []
         self.accuracy_memory = []
-        self.memory_max = 1000
+        self.memory_max = 10000
         self.index = 0
 
     def append(self,x,t):
-        self.x_memory.append(x)
-        self.t_memory.append(t)
+        if len(self.x_memory) < self.memory_max:
+            self.x_memory.append([])
+            self.t_memory.append([])
+        self.x_memory[self.index] = x
+        self.t_memory[self.index] = t
+        self.index = (self.index+1)%self.memory_max
+        # self.x_memory.append(x)
+        # self.t_memory.append(t)
 
     def addLossAccuracy(self,loss,accuracy):
         if len(self.loss_memory) == 0:
