@@ -1,0 +1,4 @@
+Javaエージェントです．
+プレイヤーのクラス名は
+tkg.aiwolf.TKGPlayer
+です．

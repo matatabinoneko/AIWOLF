@@ -1,0 +1,10 @@
+*.sh
+/net_folder
+/graph_folder
+/daily_model
+/player_model
+/predict_model
+/result
+.DS_Store
+/__pycache__
+/log

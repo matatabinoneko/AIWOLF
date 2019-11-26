@@ -1,0 +1,10 @@
+動かし方
+
+Pythonのサンプルと基本は同様です。
+サーバーを立ち上げて他のエージェントを接続した上で、
+cash_keras.pyがあるディレクトリから、下記のコマンドを実行
+
+python cash_keras.py -h localhost -p 10000
+
+
+Keras(tensorflow(CPU) backend)を使います。python3系で動作確認しています。
