@@ -34,7 +34,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.train_times = train_times
         self.each_model = each_model
         self.train_cnt = 1
-        self.day = 0
+
         if self.agent_num <= 6:
             self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2,"POSSESSED":3}   
         elif self.agent_num == 7:
@@ -43,11 +43,6 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2,"MEDIUM":5}
         else:
             self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2,"POSSESSED":3,"BODYGUARD":4,"MEDIUM":5}      
-        self.num_to_role = {v:k for k,v in self.role_to_num.items()}
-        self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
-        self.werewolf_list = ["POSSESSED","WEREWOLF"]
-        self.role_num = len(self.role_to_num)
-
 
         if self.agent_num == 5:
             self.utiwake = {"VILLAGER":2,"SEER":1,"POSSESSED":1,"WEREWOLF":1}
@@ -62,6 +57,14 @@ class modify_predict_role_data_info(modify_vector_data_info):
         else:
             self.utiwake = {"VILLAGER":8,"SEER":1,"POSSESSED":1,"WEREWOLF":3,"MEDIUM":1,"BODYGUARD":1}
 
+        self.num_to_role = {v:k for k,v in self.role_to_num.items()}
+        self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
+        self.werewolf_list = ["POSSESSED","WEREWOLF"]
+        self.role_num = len(self.role_to_num)
+
+        self.max_day = self.agent_num  - (2*self.utiwake.get("WEREWOLF"))
+        self.day = np.zeros(self.max_day).astype(np.float32)
+
 
 
         self.declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
@@ -70,7 +73,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.last_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
         self.estimate_list = np.zeros((self.agent_num,self.agent_num,self.role_num),dtype=np.int32) 
         self.co_list = np.zeros((self.agent_num,self.role_num),dtype=np.int32) 
-        self.seer_co_oder = np.zeros(self.agent_num,dtype=np.int32)
+        self.seer_co_oder = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
         self.divined_list = np.zeros((self.agent_num,self.agent_num,2)) #0:HUMAN 1:WEREWOLF
         self.identified_list = np.zeros((self.agent_num,self.agent_num,2))
         self.declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
@@ -98,7 +101,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
         # self.player_vector_length = self.daily_vector.shape[1] + 1
         self.daily_vector_length = self.daily_vector.shape[0]*self.daily_vector.shape[1] + self.sub_feat.shape[0]
         print(self.daily_vector_length)
-
+       
 
         self.role_cnt = defaultdict(int)
         self.predict_cnt = defaultdict(int)
@@ -114,7 +117,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
         # self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num*self.role_num) for i in range(self.agent_num)]
         # self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.agent_num)]
-        self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num) for i in range(self.agent_num)]
+        self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num) for i in range(self.max_day)]
 
 
         if self.each_model == True:
@@ -142,8 +145,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.daily_vector = np.hstack((
                                     self.co_list,#カミングアウト役職
                                     self.divined_list.reshape(self.agent_num,-1),#占い結果
-                                    # self.identified_list.reshape(self.agent_num,-1), #霊媒結果
-                                    self.seer_co_oder.reshape(-1,1),#占いカミングアウト順番
+                                    self.seer_co_oder,#占いカミングアウト順番
                                     self.last_declaration_vote_list,#前回までの投票宣言先
                                     self.last_vote_list,#前回までの投票先
                                     self.declaration_vote_list,#今回の投票宣言先
@@ -166,8 +168,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
             
         common_feats = np.hstack((
             self.day,#日にち
-            # self.my_agent_id,#自分の番号
-            self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],
+            self.my_agent_id,#自分の番号
+            # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
             self.my_role,#自分の役職
             ))
 
@@ -178,6 +180,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 self.other_role.reshape(-1),#他プレイヤの確定役職
             ))
         self.sub_feat = common_feats
+
 
     def initialize(self, base_info, diff_data, game_setting):
         # super(self).initialize()
@@ -192,7 +195,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.daily_vector.fill(0)
         self.estimate_list.fill(0)
         self.co_list.fill(0)
-        self.seer_co_cnt = 1
+        self.seer_co_cnt = 0
         self.seer_co_oder.fill(0)
         self.seer_have_been_co = False
         self.have_ever_vote = False
@@ -318,7 +321,87 @@ class modify_predict_role_data_info(modify_vector_data_info):
         return np.hstack((self.daily_vector.reshape(-1),self.sub_feat.reshape(-1))).astype(np.float32)
 
   
+    def understand_text(self,agent,talk_texts):
+            '''talkのtext部分を解釈可能にparse'''
+            talk_texts = talk_texts.split(' ')
+            # print(talk_texts)
+            if not talk_texts[0] in ["Skip","Over"]:
+                self.talk_cnt[agent] += 1
 
+            if(talk_texts[0]=="Skip"):
+                None
+            elif(talk_texts[0]=="Over"):
+                None
+            elif(talk_texts[0]=="VOTE"):
+                target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
+                target = int(target) - 1
+                self.declaration_vote_list[agent][target] = 1
+            elif(talk_texts[0]=="COMINGOUT"):
+                role = talk_texts[2]
+                self.co_list[agent][self.role_to_num[role]] = 1
+
+                if role == "SEER":
+                    self.seer_have_been_co = True
+                    self.seer_co_oder[agent][self.seer_co_cnt] = 1
+
+
+            elif(talk_texts[0]=="ESTIMATE"):
+                target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
+                target = int(target) - 1
+                role = talk_texts[2]
+                self.estimate_list[agent][target][self.role_to_num[role]] = 1
+                if role in self.human_list:
+                    self.ag_esti_list[agent][target] = 1
+                elif role in self.werewolf_list:
+                    self.disag_esti_list[agent][target] = 1
+
+            elif(talk_texts[0]=="DIVINATION"):
+                None
+            elif(3<len(talk_texts) and talk_texts[2][1:]=="DIVINED"):
+                # print(talk_texts[4][:-1])
+                target = re.search(r"[0-9][0-9]",talk_texts[3]).group()
+                target = int(target) - 1
+                if(talk_texts[4][:-1]=="HUMAN"):
+                    role = 0
+                else:
+                    role = 1
+                self.divined_list[agent][target][role] = 1
+            elif(3<len(talk_texts) and talk_texts[2][1:]=="IDENTIFIED"):
+                target = re.search(r"[0-9][0-9]",talk_texts[3]).group()
+                target = int(target) - 1
+                if(talk_texts[4][:-1]=="HUMAN"):
+                    role = 0
+                else:
+                    role = 1
+                self.identified_list[agent][target][role] = 1
+            elif(talk_texts[0]=="DIVINED"):
+                # print(talk_texts)
+                target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
+                target = int(target) - 1
+                if target<self.agent_num and agent<self.agent_num:
+                    if(talk_texts[2]=="HUMAN"):
+                        role = 0
+                    else:
+                        role = 1
+                    self.divined_list[agent][target][role] = 1
+            elif(talk_texts[0]=="IDENTIFIED"):
+                None
+            elif(talk_texts[0]=="GUARD"):
+                None
+            elif(talk_texts[0]=="GUARDED"):
+                None
+            elif(talk_texts[0]=="ATTACK"):
+                None
+            elif(talk_texts[0]=="AGREE"):
+                None
+            elif(talk_texts[0]=="DISAGREE"):
+                None
+            elif(talk_texts[0]=="REQUEST"):
+                None
+            elif(talk_texts[0]=="BECAUSE"):
+                None
+            else:
+                print(talk_texts,"ERROR")
 
     def updateVector(self):
         # common_feats = [self.base_info["day"]]
@@ -449,6 +532,55 @@ class modify_predict_role_data_info(modify_vector_data_info):
         #     for i in range(len(self.player_x)):
         #         for j in range(len(self.player_x[i])):
         #             self.player_net[0].addVector(self.player_x[i][j],[self.predict_t[j]])
+
+    def update(self, base_info, diff_data, request):
+        self.base_info = base_info
+        self.diff_data = diff_data
+        self.request = request
+        self.day.fill(0)
+        if self.base_info["day"] <= self.max_day:
+            self.day[self.base_info["day"]-1] = 1
+        else:
+            self.day[-1] = 1
+        # print("\n\nrequest:",request,sep='\n')
+        # print("update: base_info=",base_info,sep='\n')
+        # print("update: diff_data=",diff_data,sep='\n')
+
+        ### edit from here ###
+
+        for i in range(len(self.diff_data)):
+            # print(self.diff_data["type"][i])
+            if self.diff_data["type"][i] == "talk":
+                self.updateTalk(i)
+            elif self.diff_data["type"][i] == "vote":
+                self.updateVoteList(i)
+            elif self.diff_data["type"][i] == 'finish':
+                self.countEachRole(i)
+            elif self.diff_data["type"][i] == "dead" or self.diff_data["type"][i] == "execute":
+                self.updateAliveList(i)
+            elif self.diff_data['type'][i] == 'identify' or self.diff_data['type'][i] == 'divine' or self.diff_data['type'][i] == 'guard':
+                self.getResult(i)
+            # elif self.diff_data["type"][i] == "":
+
+        if self.seer_have_been_co == True:
+            self.seer_have_been_co = False
+            self.seer_co_cnt += 1
+
+
+        # self.updateTalk()
+        if self.fake_role != '' and self.do_fake_report== False:
+            self.do_fake_report = True
+            self.getFakeResult()
+
+        if request == 'DAILY_INITIALIZE' and 2 <= base_info["day"]:
+            self.updateVote_declare()
+
+        elif request == "DAILY_FINISH" and 1 <= base_info["day"]:
+            #0:自分が人間判定された数 1:自分が人狼判定された数 2:占い師の名乗り出た順番 3:報告した人間の数 4:報告した人狼の数 5:発言と投票先が変わった数．6:生死(#alive:0 attacked:1 execute:-1)　7~11:肯定的意見の数　12~16:否定的意見の数        
+            self.updateVector()
+            if self.base_info['myRole'] == 'POSSESSED':
+                self.do_fake_report = False
+
 
     def display_game_result(self):
         sum_role_pred = 0

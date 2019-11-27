@@ -59,6 +59,7 @@ class data_info():
         self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
         self.werewolf_list = ["POSSESSED","WEREWOLF"]
         self.role_num = len(self.role_to_num)
+        self.max_day = self.agent_num  - (2*self.utiwake.get("WEREWOLF"))
 
 
         self.declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
@@ -100,8 +101,8 @@ class data_info():
         self.trust_my_skill = 0
         self.not_trust_my_skill = 0
 
-        self.daily_net = [predict_werewolf(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num) for i in range(self.agent_num)]
-        self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.agent_num)]
+        self.daily_net = [predict_werewolf(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num) for i in range(self.max_day)]
+        self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.max_day)]
 
         if self.each_model == True:
             if self.daily_train == False:
@@ -255,20 +256,12 @@ class data_info():
                 self.declaration_vote_list[agent][target] = 1
             elif(talk_texts[0]=="COMINGOUT"):
                 role = talk_texts[2]
-                if(role=="VILLAGER"):
-                    self.co_list[agent][0] = 1
-                elif(role=="SEER"):
-                    self.co_list[agent][1] = 1
-                    self.seer_co_oder[agent] = self.seer_co_cnt
+                self.co_list[agent][self.role_to_num[role]] = 1
+                if role == "SEER":
                     self.seer_have_been_co = True
-                elif(role=="POSSESED"):
-                    self.co_list[agent][2] = 1
-                elif(role=="WEREWOLF"):
-                    self.co_list[agent][3] = 1
-
-                if self.seer_have_been_co == True:
-                    self.seer_have_been_co = False
-                    self.seer_co_cnt += 1
+                    self.seer_co_oder[agent] = self.seer_co_cnt
+                
+                # print(self.seer_co_oder)
 
             elif(talk_texts[0]=="ESTIMATE"):
                 target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
@@ -363,6 +356,7 @@ class data_info():
             None
         else:
             self.understand_text(agent,talk_texts)
+
 
     def updateVote_declare(self):
         self.daily_vector.fill(0)
@@ -642,6 +636,10 @@ class data_info():
             elif self.diff_data['type'][i] == 'identify' or self.diff_data['type'][i] == 'divine' or self.diff_data['type'][i] == 'guard':
                 self.getResult(i)
             # elif self.diff_data["type"][i] == "":
+
+        if self.seer_have_been_co == True:
+            self.seer_have_been_co = False
+            self.seer_co_cnt += 1
 
         # self.updateTalk()
         if self.fake_role != '' and self.do_fake_report== False:
