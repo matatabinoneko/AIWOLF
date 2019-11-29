@@ -101,8 +101,8 @@ class data_info():
         self.trust_my_skill = 0
         self.not_trust_my_skill = 0
 
-        self.daily_net = [predict_werewolf(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num) for i in range(self.max_day)]
-        self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.max_day)]
+        self.daily_net = [predict_werewolf(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num) for i in range(self.max_day+1)]
+        self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.max_day+1)]
 
         if self.each_model == True:
             if self.daily_train == False:
@@ -166,9 +166,9 @@ class data_info():
         self.ag_esti_list.fill(0)
         self.disag_esti_list.fill(0)
 
-        self.daily_x = [[]]
+        self.daily_x = [[] for i in range(len(self.daily_net))]
         self.daily_t = [0 for i in range(self.agent_num)]
-        self.player_x = [[]for i in range(self.agent_num)]
+        self.player_x = [[]for i in range(len(self.player_net))]
         self.player_t = [0 for i in range(self.agent_num)]
 
 
@@ -303,7 +303,15 @@ class data_info():
                         role = 1
                     self.divined_list[agent][target][role] = 1
             elif(talk_texts[0]=="IDENTIFIED"):
-                None
+                # print(talk_texts)
+                target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
+                target = int(target) - 1
+                if target<self.agent_num and agent<self.agent_num:
+                    if(talk_texts[2]=="HUMAN"):
+                        role = 0
+                    else:
+                        role = 1
+                    self.identified_list[agent][target][role] = 1                
             elif(talk_texts[0]=="GUARD"):
                 None
             elif(talk_texts[0]=="GUARDED"):
@@ -409,8 +417,8 @@ class data_info():
         self.createDailyVector()
 
         for i in range(len(self.daily_vector)):
-            self.player_x[self.base_info["day"]].append(common_vector + self.daily_vector[i,:].tolist())
-        self.daily_x.append(common_vector + self.daily_vector.reshape(-1).tolist())
+            self.player_x[self.day].append(common_vector + self.daily_vector[i,:].tolist())
+        self.daily_x[self.day].append(common_vector + self.daily_vector.reshape(-1).tolist())
         # for i in range(len(self.daily_x)):
         #     print(len(self.daily_x[i]))
         # print(self.player_x)
@@ -597,7 +605,8 @@ class data_info():
     def addVectorToEachModel(self):
         if self.daily_train == True:
             for i in range(1,len(self.daily_x)):
-                self.daily_net[i].addVector(self.daily_x[i],self.daily_t)
+                if 0 < len(self.daily_x[i]):
+                    self.daily_net[i].addVector(self.daily_x[i],self.daily_t)
         if self.player_train == True:
             for i in range(len(self.player_x)):
                 for j in range(len(self.player_x[i])):
@@ -606,17 +615,20 @@ class data_info():
     def addVectorToOneModel(self):
         if self.daily_train == True:
             for i in range(1,len(self.daily_x)):
-                self.daily_net[0].addVector(self.daily_x[i],self.daily_t)
+                if 0 < len(self.daily_x[i]):
+                    self.daily_net[0].addVector(self.daily_x[i],self.daily_t)
         if self.player_train == True:
             for i in range(len(self.player_x)):
                 for j in range(len(self.player_x[i])):
-                    self.player_net[0].addVector(self.player_x[i][j],[self.player_t[j]])
+                    self.player_net[0].addVector([self.player_x[i][j]],[self.player_t[j]])
 
     def update(self, base_info, diff_data, request):
         self.base_info = base_info
         self.diff_data = diff_data
         self.request = request
         self.day = self.base_info["day"]
+        if self.max_day < self.day:
+            self.day = self.max_day
         # print("\n\nrequest:",request,sep='\n')
         # print("update: base_info=",base_info,sep='\n')
         # print("update: diff_data=",diff_data,sep='\n')
@@ -841,6 +853,7 @@ class Memory():
         return len(self.x_memory)
 
     def choice(self,n):
+        # print(np.array(self.x_memory).shape,n)
         choice = np.random.choice(len(self.x_memory),n)
         x = np.array(self.x_memory)[choice,:].astype(np.float32)
         t = np.array(self.t_memory)[choice,:].astype(np.int32)
@@ -912,4 +925,5 @@ class predict_role():
         return loss.array, accuracy.array, y
         
     def addVector(self, x, t):
-        self.memory.append(x,t)
+        for i in range(len(x)):
+            self.memory.append(x[i],t) 

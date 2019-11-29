@@ -60,10 +60,12 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.num_to_role = {v:k for k,v in self.role_to_num.items()}
         self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
         self.werewolf_list = ["POSSESSED","WEREWOLF"]
+        self.side_to_num = {"HUMAN":0,"VILLAGER":0,"SEER":0,"BODYGUARD":0,"MEDIUM":0,"POSSESSED":1,"WEREWOLF":1}
         self.role_num = len(self.role_to_num)
 
         self.max_day = self.agent_num  - (2*self.utiwake.get("WEREWOLF"))
         self.day = np.zeros(self.max_day).astype(np.float32)
+        self.day[0] = 1
 
 
 
@@ -92,8 +94,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.talk_cnt = np.zeros((self.agent_num,1),dtype=np.int32)
         self.my_agent_id = np.zeros((self.agent_num),dtype=np.int32)
         self.my_agent_id[-1] = 1
-        self.other_role = np.zeros((self.agent_num,self.role_num),dtype=np.int32)
-        
+        self.other_role = np.zeros((self.agent_num,2),dtype=np.float32)
+
 
         self.createDailyVector()
         self.createSubFeat()
@@ -114,10 +116,10 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.trust_my_skill = 0
         self.not_trust_my_skill = 0
 
-
+        self.role_t = np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
         # self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num*self.role_num) for i in range(self.agent_num)]
         # self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.agent_num)]
-        self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num) for i in range(self.max_day)]
+        self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,role_t = chainer.Variable(self.role_t)) for i in range(self.max_day+1)]
 
 
         if self.each_model == True:
@@ -141,11 +143,17 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
     def createDailyVector(self):
         #カミングアウトのリスト　占い結果　占い師とカミングアウトした順番　前回の投票宣言　前回の投票先　生死情報　肯定的意見　否定的意見　発話の割合
-        # print(self.talk_cnt/np.sum(self.talk_cnt))
+
+        tmp = [0 for i in range(self.agent_num)]
+        for i in range(len(self.seer_co_oder)):
+            for j in range(len(self.seer_co_oder[i])):
+                if self.seer_co_oder[i][j] == 1:
+                    tmp[i] = j+1
         self.daily_vector = np.hstack((
                                     self.co_list,#カミングアウト役職
                                     self.divined_list.reshape(self.agent_num,-1),#占い結果
-                                    self.seer_co_oder,#占いカミングアウト順番
+                                    # self.seer_co_oder,#占いカミングアウト順番
+                                    np.array(tmp).reshape(-1,1),#占いカミングアウト順番
                                     self.last_declaration_vote_list,#前回までの投票宣言先
                                     self.last_vote_list,#前回までの投票先
                                     self.declaration_vote_list,#今回の投票宣言先
@@ -165,20 +173,17 @@ class modify_predict_role_data_info(modify_vector_data_info):
         # print(self.daily_vector.shape)
 
     def createSubFeat(self):
-            
         common_feats = np.hstack((
-            self.day,#日にち
+            # self.day,#日にち
+            np.where(self.day==1)[0][0]+1,#日にち
             self.my_agent_id,#自分の番号
             # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
             self.my_role,#自分の役職
+            self.other_role.reshape(-1)#自分の主観情報
             ))
 
         # alpha_common_feats = self.daily_vector[np.where(self.my_agent_id == 1)[0][0],:]
-        if 7 <= self.agent_num:
-            common_feats = np.hstack((
-                common_feats,
-                self.other_role.reshape(-1),#他プレイヤの確定役職
-            ))
+
         self.sub_feat = common_feats
 
 
@@ -230,12 +235,13 @@ class modify_predict_role_data_info(modify_vector_data_info):
         for i,role in self.base_info["roleMap"].items():
             i = int(i)
             if i != self.base_info["agentIdx"]:
-                self.other_role[i-1][self.role_to_num[role]] = 1
+                self.other_role[i-1][self.side_to_num[role]] = 1
 
         self.ag_esti_list.fill(0)
         self.disag_esti_list.fill(0)
 
-        self.predict_x = [[]]
+
+        self.predict_x = [[] for i in range(len(self.predict_net))]
         self.predict_t = [0 for i in range(self.agent_num*self.role_num)]
         # self.player_x = [[]for i in range(self.agent_num)]
         # self.predict_t = [0 for i in range(self.agent_num)]
@@ -366,6 +372,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 else:
                     role = 1
                 self.divined_list[agent][target][role] = 1
+                if agent == self.base_info["agentIdx"] - 1:
+                    self.identified_and_dvined[target][self.side_to_num[role]] = 1
             elif(3<len(talk_texts) and talk_texts[2][1:]=="IDENTIFIED"):
                 target = re.search(r"[0-9][0-9]",talk_texts[3]).group()
                 target = int(target) - 1
@@ -374,6 +382,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 else:
                     role = 1
                 self.identified_list[agent][target][role] = 1
+                if agent == self.base_info["agentIdx"] - 1:
+                    self.identified_and_dvined[target][self.side_to_num[role]] = 1
             elif(talk_texts[0]=="DIVINED"):
                 # print(talk_texts)
                 target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
@@ -384,8 +394,21 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     else:
                         role = 1
                     self.divined_list[agent][target][role] = 1
+                if agent == self.base_info["agentIdx"] - 1:
+                    self.identified_and_dvined[target][self.side_to_num[role]] = 1
             elif(talk_texts[0]=="IDENTIFIED"):
-                None
+                target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
+                target = int(target) - 1
+                # print(self.identified_list[agent][target])
+                if target<self.agent_num and agent<self.agent_num:
+                    if(talk_texts[2]=="HUMAN"):
+                        role = 0
+                    else:
+                        role = 1
+                    self.identified_list[agent][target][role] = 1  
+                if agent == self.base_info["agentIdx"] - 1:
+                    self.identified_and_dvined[target][self.side_to_num[role]] = 1
+                # print(self.identified_list[agent][target])
             elif(talk_texts[0]=="GUARD"):
                 None
             elif(talk_texts[0]=="GUARDED"):
@@ -412,7 +435,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
         # for i in range(len(self.daily_vector)):
         #     self.player_x[self.base_info["day"]].append(player_x_data[i,:].tolist())
-        self.predict_x.append(self.createXPredictData().tolist())
+        self.predict_x[np.where(self.day == 1)[0][0]+1].append(self.createXPredictData().tolist())
         # for i in range(len(self.predict_x)):
         #     print(len(self.predict_x[i]))
         # print(self.player_x)
@@ -425,7 +448,9 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
     def decode(self,line):
         tmp = []
+        # print(line) 
         for l in line:
+            # print(tmp)
             # print(l)
             # print(np.where(l==True)[0])
             tmp.append(np.where(l==True)[0][0])
@@ -442,10 +467,12 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.role_cnt[self.num_to_role[t_role]] += 1
             if y_role == t_role:
                 self.correct_predict_cnt[self.num_to_role[t_role]]+=1
+            print(self.num_to_role[y_role], self.num_to_role[t_role])
         # print(self.correct_predict_cnt)
-
+        print()
         if collections.Counter([self.num_to_role[role] for role in y]) == self.utiwake:
             self.utiwake_cnt+= 1
+
 
         tmp = 0
         for agent,y_role in enumerate(y):
@@ -473,24 +500,36 @@ class modify_predict_role_data_info(modify_vector_data_info):
         for i in range(len(self.predict_net)):
             if 10 < len(self.predict_net[i].memory):
                 loss, accuracy = self.predict_net[i].train()
-
+                # print(loss,accuracy)
                 self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
 
     def predict_model_eval(self):
-        if self.each_model == True:
-            for i in range(1,len(self.predict_x)):
-                loss, accuracy, predict_y = self.predict_net[i].eval(np.array(self.predict_x[i]).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
-                # print(predict_y,self.predict_t)
-                self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
-                self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
+        # if self.each_model == True:
+        #     for i in range(len(self.predict_x)):
+        #         loss, accuracy, predict_y = self.predict_net[i].eval(np.array(self.predict_x[i]).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
+        #         self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
+        #         self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
 
 
-        else:
-            for i in range(1,len(self.predict_x)):
-                loss, accuracy, predict_y = self.predict_net[0].eval(np.array(self.predict_x[i]).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
-                self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
-                self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
-
+        # else:
+            # for i in range(1,len(self.predict_x)):
+            #     index = i
+            #     if self.max_day < index:
+            #         index = self.max_day
+            #     loss, accuracy, predict_y = self.predict_net[0].eval(np.array(self.predict_x[i]).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
+            #     # print(predict_y,self.predict_t)
+            #     self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
+            #     self.predict_net[index].memory.addLossAccuracy(loss,accuracy)
+            for i in range(len(self.predict_x)):
+                if 0 < len(self.predict_x[i]):
+                    # print(np.array(self.predict_x[i]).reshape(1,-1).astype(np.float32))
+                    # print(np.array(self.predict_t).reshape(1,-1).astype(np.int32))
+                    # print(np.array(self.predict_x[i]).reshape(data_num,-1).astype(np.float32))
+                    # print(np.tile(np.array(self.predict_t).reshape(1,-1),(data_num,1)).astype(np.int32))
+                    for x in self.predict_x[i]:
+                        loss, accuracy, predict_y = self.predict_net[0].eval(np.array(x).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
+                        self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
+                        self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
 
     def save_each_model(self):
         for i in range(len(self.predict_net)):
@@ -516,8 +555,9 @@ class modify_predict_role_data_info(modify_vector_data_info):
         # chainer.serializers.save_npz(player_path+file_path, self.player_net[0].net)
 
     def addVectorToEachModel(self):
-        if self.train_mode == True:
-            for i in range(1,len(self.predict_x)):
+        
+        for i in range(1,len(self.predict_x)):
+            if len(self.predict_x[i]) != 0:
                 self.predict_net[i].addVector(self.predict_x[i],self.predict_t)
         # if self.predict_train == True:
         #     for i in range(len(self.player_x)):
@@ -525,8 +565,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
         #             self.player_net[i].addVector(self.player_x[i][j],[self.predict_t[j]])
 
     def addVectorToOneModel(self):
-        if self.train_mode == True:
-            for i in range(1,len(self.predict_x)):
+        for i in range(1,len(self.predict_x)):
+            if len(self.predict_x[i]) != 0:
                 self.predict_net[0].addVector(self.predict_x[i],self.predict_t)
         # if self.predict_train == True:
         #     for i in range(len(self.player_x)):
@@ -542,6 +582,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.day[self.base_info["day"]-1] = 1
         else:
             self.day[-1] = 1
+        # print(self.day,request) if 3 <= self.base_info["day"] else None
         # print("\n\nrequest:",request,sep='\n')
         # print("update: base_info=",base_info,sep='\n')
         # print("update: diff_data=",diff_data,sep='\n')
@@ -638,10 +679,11 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
 
     def finish(self):
-        if self.each_model == True:
-            self.addVectorToEachModel()
-        else:
-            self.addVectorToOneModel()
+        if self.train_mode == True:
+            if self.each_model == True:
+                self.addVectorToEachModel()
+            else:
+                self.addVectorToOneModel()
 
 
         if self.train_mode == True:
@@ -677,9 +719,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     self.save_one_model()
 
 
-# class predict_werewolf():
-
-#     def train(self):
+# class predict_werewolf():  　
+#     def train(self):  　
 #         x,t = self.memory.choice(10)
 #         with chainer.using_config("train", True), chainer.using_config("enable_backprop", True):
 #             y = self.net(x)
@@ -709,13 +750,14 @@ class modify_predict_role_data_info(modify_vector_data_info):
 class predict_role(predict_role):
             
 
-    def __init__(self,n_input,n_hidden,n_output,agent_num,role_num):
+    def __init__(self,n_input,n_hidden,n_output,agent_num,role_num,role_t):
         self.net = MLP(n_input=n_input,n_hidden=n_hidden,n_output=n_output)
         self.optimizer = chainer.optimizers.Adam()
         self.optimizer.setup(self.net)
         self.memory = Memory()
         self.agent_num = agent_num
         self.role_num = role_num
+        self.role_t = role_t
 
     def decode(self,line):
         tmp = []
@@ -729,7 +771,8 @@ class predict_role(predict_role):
         x,t = self.memory.choice(10)
         with chainer.using_config("train", True), chainer.using_config("enable_backprop", True):
             y = self.net(x)
-            loss = F.sigmoid_cross_entropy(y,t)
+            loss = F.sigmoid_cross_entropy(y,t)# + F.mean(F.mean(F.reshape(F.sigmoid(y).__mul__(np.array(np.argsort(np.argsort(-np.array(y.array).reshape((-1,self.agent_num,self.role_num)),axis=2),axis=2) < 1).astype(np.int32).reshape(y.shape[0],-1)),(-1,self.agent_num,self.role_num)),axis=1).__sub__(self.role_t).__abs__())
+            # loss = F.mean(F.mean(F.reshape(F.sigmoid(y).__mul__(np.array(np.argsort(np.argsort(-np.array(y.array).reshape((-1,self.agent_num,self.role_num)),axis=2),axis=2) < 1).astype(np.int32).reshape(y.shape[0],-1)),(-1,self.agent_num,self.role_num)),axis=1).__sub__(self.role_t).__abs__())
             y = y.array.reshape((-1,self.agent_num,self.role_num))
             t = t.reshape((-1,self.agent_num,self.role_num))
             y = np.array(np.argsort(np.argsort(-y,axis=2),axis=2) < 1)
@@ -747,7 +790,8 @@ class predict_role(predict_role):
     def eval(self,x,t):
         with chainer.using_config("train", False), chainer.using_config("enable_backprop", False):
             y = self.net(x)
-            loss = F.sigmoid_cross_entropy(y,t)
+            # print(F.sum(F.softmax(y.astype(np.float32),axis=1),axis=0))
+            loss = F.sigmoid_cross_entropy(y,t) + F.sum(abs(F.sum(F.softmax(y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=1)-self.role_t))
             y = y.array.reshape((self.agent_num,self.role_num))
             t = t.reshape((self.agent_num,self.role_num))
             # print(y)
@@ -763,4 +807,6 @@ class predict_role(predict_role):
 
 
     def addVector(self, x, t):
-        self.memory.append(x,t)
+        for i in range(len(x)):
+            self.memory.append(x[i],t)
+
