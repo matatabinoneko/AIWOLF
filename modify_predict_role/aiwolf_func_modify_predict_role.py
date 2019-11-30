@@ -26,13 +26,14 @@ class modify_predict_role_data_info(modify_vector_data_info):
 # class data_info():
 
 
-    def __init__(self,agent_num=5,train_mode=False,train_times=10000,each_model=True):
+    def __init__(self,agent_num=5,train_mode=False,train_times=10000,each_model=True,epsilon=0.3):
         # super(self).__init__()
         self.Time = time.time()
         self.agent_num = agent_num
         self.train_mode = train_mode
         self.train_times = train_times
         self.each_model = each_model
+        self.epsilon = epsilon
         self.train_cnt = 1
 
         if self.agent_num <= 6:
@@ -116,10 +117,10 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.trust_my_skill = 0
         self.not_trust_my_skill = 0
 
-        self.role_t = np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
+        self.t_role_cnt= np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
         # self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num*self.role_num) for i in range(self.agent_num)]
         # self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.agent_num)]
-        self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,role_t = chainer.Variable(self.role_t)) for i in range(self.max_day+1)]
+        self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt) for i in range(self.max_day+1)]
 
 
         if self.each_model == True:
@@ -179,7 +180,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.my_agent_id,#自分の番号
             # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
             self.my_role,#自分の役職
-            self.other_role.reshape(-1)#自分の主観情報
+            # self.other_role.reshape(-1)#自分の主観情報
             ))
 
         # alpha_common_feats = self.daily_vector[np.where(self.my_agent_id == 1)[0][0],:]
@@ -256,6 +257,11 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
     def selectAgent(self,target_role):
         #返り値は１始まり
+
+        if self.train_mode == True:
+            if np.random.random() < self.epsilon:
+                return self.randomSelect()
+
         if self.each_model == True:
             use_model = self.base_info["day"]
         else:
@@ -373,7 +379,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     role = 1
                 self.divined_list[agent][target][role] = 1
                 if agent == self.base_info["agentIdx"] - 1:
-                    self.identified_and_dvined[target][self.side_to_num[role]] = 1
+                    self.other_role[target,role] = 1
             elif(3<len(talk_texts) and talk_texts[2][1:]=="IDENTIFIED"):
                 target = re.search(r"[0-9][0-9]",talk_texts[3]).group()
                 target = int(target) - 1
@@ -383,7 +389,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     role = 1
                 self.identified_list[agent][target][role] = 1
                 if agent == self.base_info["agentIdx"] - 1:
-                    self.identified_and_dvined[target][self.side_to_num[role]] = 1
+                    self.other_role[target,role] = 1
             elif(talk_texts[0]=="DIVINED"):
                 # print(talk_texts)
                 target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
@@ -395,7 +401,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
                         role = 1
                     self.divined_list[agent][target][role] = 1
                 if agent == self.base_info["agentIdx"] - 1:
-                    self.identified_and_dvined[target][self.side_to_num[role]] = 1
+                    self.other_role[target,role] = 1
             elif(talk_texts[0]=="IDENTIFIED"):
                 target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
                 target = int(target) - 1
@@ -407,7 +413,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
                         role = 1
                     self.identified_list[agent][target][role] = 1  
                 if agent == self.base_info["agentIdx"] - 1:
-                    self.identified_and_dvined[target][self.side_to_num[role]] = 1
+                    self.other_role[target,role] = 1
                 # print(self.identified_list[agent][target])
             elif(talk_texts[0]=="GUARD"):
                 None
@@ -750,15 +756,14 @@ class modify_predict_role_data_info(modify_vector_data_info):
 class predict_role(predict_role):
             
 
-    def __init__(self,n_input,n_hidden,n_output,agent_num,role_num,role_t):
+    def __init__(self,n_input,n_hidden,n_output,agent_num,role_num,t_role_cnt):
         self.net = MLP(n_input=n_input,n_hidden=n_hidden,n_output=n_output)
         self.optimizer = chainer.optimizers.Adam()
         self.optimizer.setup(self.net)
         self.memory = Memory()
         self.agent_num = agent_num
         self.role_num = role_num
-        self.role_t = role_t
-
+        self.t_role_cnt= t_role_cnt
     def decode(self,line):
         tmp = []
         for l in line:
@@ -771,14 +776,36 @@ class predict_role(predict_role):
         x,t = self.memory.choice(10)
         with chainer.using_config("train", True), chainer.using_config("enable_backprop", True):
             y = self.net(x)
-            loss = F.sigmoid_cross_entropy(y,t)# + F.mean(F.mean(F.reshape(F.sigmoid(y).__mul__(np.array(np.argsort(np.argsort(-np.array(y.array).reshape((-1,self.agent_num,self.role_num)),axis=2),axis=2) < 1).astype(np.int32).reshape(y.shape[0],-1)),(-1,self.agent_num,self.role_num)),axis=1).__sub__(self.role_t).__abs__())
-            # loss = F.mean(F.mean(F.reshape(F.sigmoid(y).__mul__(np.array(np.argsort(np.argsort(-np.array(y.array).reshape((-1,self.agent_num,self.role_num)),axis=2),axis=2) < 1).astype(np.int32).reshape(y.shape[0],-1)),(-1,self.agent_num,self.role_num)),axis=1).__sub__(self.role_t).__abs__())
+            # print(F.mean(F.mean(F.reshape(F.sigmoid(y),(-1,self.agent_num,self.role_num)),axis=2),axis=1).__sub__(self.t_role_cnt.__abs__())
+            loss = F.sigmoid_cross_entropy(y,t)# + F.mean(F.mean(F.reshape(F.sigmoid(y).__mul__(np.array(np.argsort(np.argsort(-np.array(y.array).reshape((-1,self.agent_num,self.role_num)),axis=2),axis=2) < 1).astype(np.int32).reshape(y.shape[0],-1)),(-1,self.agent_num,self.role_num)),axis=1).__sub__(self.t_role_cnt.__abs__())
+            # print(loss,"sigmoid")
+            # loss = F.mean(F.mean(F.reshape(F.sigmoid(y).__mul__(np.array(np.argsort(np.argsort(-np.array(y.array).reshape((-1,self.agent_num,self.role_num)),axis=2),axis=2) < 1).astype(np.int32).reshape(y.shape[0],-1)),(-1,self.agent_num,self.role_num)),axis=1).__sub__(self.t_role_cnt.__abs__())
+            # loss = F.sum(F.mean(F.mean(-F.log(F.sigmoid(y))*t-F.log(F.sigmoid(1-y))*(1-t),axis=0),axis=0))#お手製シグモイドクロスエントロピー
+
+            y_select = np.argsort(np.argsort(y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=2)
+            role_select = np.argsort(np.argsort(y.array.reshape(-1,self.agent_num,self.role_num),axis=1),axis=1)
+            y_role_cnt = np.sum(np.array(y_select < 1).astype(np.int32),axis=1)
+            # print(y[0])
+            # print(y_select[0])
+            # print(y_role_cnt[0])
+            # print(role_select[0])
+            # print(self.t_role_cnt)
+            for k in range(y_select.shape[0]):
+                for j in range(y_select.shape[2]):
+                    for i in range(y_select.shape[1]):
+                        if y_role_cnt[k][j] <= role_select[k][i][j] and role_select[k][i][j] < self.t_role_cnt[j]:
+                            loss += 0.1*(-F.sigmoid(y)[k][i*self.role_num+j]+1)
+                            # print(k,i,j,"少ない",y[k][i*self.role_num+j],(-F.sigmoid(y)[k][i*self.role_num+j]+1))
+                        elif self.t_role_cnt[j] <= role_select[k][i][j] and role_select[k][i][j] < y_role_cnt[k][j]:
+                            loss += 0.1*F.sigmoid(y)[k][i*self.role_num+j]
+                            # print(k,i,j,"多い",y[k][i*self.role_num+j],F.sigmoid(y)[k][i*self.role_num+j])
+
             y = y.array.reshape((-1,self.agent_num,self.role_num))
             t = t.reshape((-1,self.agent_num,self.role_num))
+            # print(loss,"new")
+            # print((-F.log(F.sigmoid(y))*t)[0])
+            # print((-F.log(F.sigmoid(-y+1))*(-t+1))[0])
             y = np.array(np.argsort(np.argsort(-y,axis=2),axis=2) < 1)
-            # print(y[0])
-            # print(t[0])
-            # print()
             accuracy = np.count_nonzero(np.logical_and(y,t))/np.count_nonzero(t)
             # print(np.count_nonzero(np.logical_and(y,t)[0]),np.count_nonzero(t[0]),accuracy)
             self.net.cleargrads()
@@ -791,7 +818,7 @@ class predict_role(predict_role):
         with chainer.using_config("train", False), chainer.using_config("enable_backprop", False):
             y = self.net(x)
             # print(F.sum(F.softmax(y.astype(np.float32),axis=1),axis=0))
-            loss = F.sigmoid_cross_entropy(y,t) + F.sum(abs(F.sum(F.softmax(y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=1)-self.role_t))
+            loss = F.sigmoid_cross_entropy(y,t) #+ F.sum(abs(F.sum(F.softmax(y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=1)-self.t_role_cnt)
             y = y.array.reshape((self.agent_num,self.role_num))
             t = t.reshape((self.agent_num,self.role_num))
             # print(y)

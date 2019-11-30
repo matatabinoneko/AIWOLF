@@ -24,13 +24,14 @@ class data_info():
         # self.daily_vector = np.hstack((self.co_list,self.divined_list.transpose((1,0,2)).reshape(self.agent_num,-1),self.seer_co_oder.reshape(-1,1),self.vote_another_people.reshape(-1,1),self.alive_list.reshape(-1,1),self.ag_esti_list,self.disag_esti_list))
 
 
-    def __init__(self,agent_num=5,daily_train=False,player_train=False,train_times=1000,each_model=False):
+    def __init__(self,agent_num=5,daily_train=False,player_train=False,train_times=1000,each_model=False,epsilon=0.3):
         self.Time = time.time()
         self.agent_num = agent_num
         self.daily_train = daily_train
         self.player_train = player_train
         self.train_times = train_times
         self.each_model = each_model
+        self.epsilon = epsilon
         self.train_cnt = 1 
         self.day = 0
         if self.agent_num <= 6:
@@ -179,6 +180,9 @@ class data_info():
                 return target
 
     def selectAgent(self,target_role):
+        if self.daily_train == True:
+            if np.random.random() < self.epsilon:
+                return self.randomSelect()
         #返り値のインデックスは１始まり
         if self.each_model == True:
             use_model = self.base_info["day"]
