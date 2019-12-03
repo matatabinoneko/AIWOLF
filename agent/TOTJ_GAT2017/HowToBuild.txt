@@ -1,7 +1,0 @@
-Windowsの場合を例に
-
-srcのあるフォルダーに人狼知能プラットフォーム0.4.4のjarファイルがあるとして
-md src\classes
-javac -encoding UTF-8 -cp aiwolf-common.jar;jsonic-1.3.10.jar -d src/classes src/jp/gr/java_conf/otk/aiwolf/totj/*.java
-jar cf totj.jar -C src/classes jp -C src res
- 

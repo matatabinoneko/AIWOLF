@@ -1,2 +1,0 @@
-from .predictor_cedec2017_keras import Predictor_15
-from .predictor_cedec2017_5 import Predictor_5

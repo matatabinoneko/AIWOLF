@@ -59,6 +59,7 @@ class data_info():
         self.num_to_role = {v:k for k,v in self.role_to_num.items()}
         self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
         self.werewolf_list = ["POSSESSED","WEREWOLF"]
+        self.side_to_num = {"HUMAN":0,"VILLAGER":0,"SEER":0,"BODYGUARD":0,"MEDIUM":0,"POSSESSED":1,"WEREWOLF":1}
         self.role_num = len(self.role_to_num)
         self.max_day = self.agent_num  - (2*self.utiwake.get("WEREWOLF"))
 
@@ -84,6 +85,9 @@ class data_info():
         #新たな特徴量
         self.my_role = np.zeros((self.role_num,1),dtype=np.int32)
         self.talk_cnt = np.zeros((self.agent_num,1),dtype=np.int32)
+        self.my_agent_id = np.zeros((self.agent_num),dtype=np.int32)
+        self.my_agent_id[-1] = 1
+        self.other_role = np.zeros((self.agent_num,2),dtype=np.float32)
 
 
         self.createDailyVector()
@@ -163,6 +167,13 @@ class data_info():
         self.my_role.fill(0)
         self.my_role[self.role_to_num[self.base_info["myRole"]]] = 1
 
+        self.my_agent_id.fill(0)
+        self.my_agent_id[self.base_info["agentIdx"]-1] = 1
+
+        self.other_role.fill(0)
+        for agent,role in self.base_info["roleMap"].items():
+            agent = int(agent)-1
+            self.other_role[agent][self.side_to_num[role]] = 1
 
         self.ag_esti_list.fill(0)
         self.disag_esti_list.fill(0)
@@ -392,11 +403,20 @@ class data_info():
         if self.diff_data['type'][index] == 'identify':
             self.not_reported = True
             self.myresult = self.diff_data['text'][index]
+            target = re.search(r"[0-9][0-9]",self.myresult).group()
+            target = int(target) - 1    
+            role = self.myresult.split(' ')[-1]        
+            self.other_role[target,self.side_to_num[role]] = 1
             
         # DIVINE
         if self.diff_data['type'][index] == 'divine':
             self.not_reported = True
             self.myresult = self.diff_data['text'][index]
+            target = re.search(r"[0-9][0-9]",self.myresult).group()
+            target = int(target) - 1    
+            role = self.myresult.split(' ')[-1]        
+            self.other_role[target,self.side_to_num[role]] = 1
+
             
         # GUARD
         if self.diff_data['type'][index] == 'guard':

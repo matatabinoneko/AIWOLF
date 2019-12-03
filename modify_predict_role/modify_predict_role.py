@@ -25,7 +25,7 @@ class SampleAgent(object):
     def __init__(self, agent_name):
         ## myname ##
         self.myname = agent_name
-        self.w_data = modify_predict_role_data_info(agent_num=6,train_mode=False,train_times=1000,each_model=False)
+        self.w_data = modify_predict_role_data_info(agent_num=6,train_mode=True,train_times=10000,net_load=False,test_train_mode=False,each_model=False)
 
 
 

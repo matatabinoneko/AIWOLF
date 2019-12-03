@@ -22,18 +22,21 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from modify_vector.aiwolf_func_modify_vector import *
 
+
 class modify_predict_role_data_info(modify_vector_data_info):
 # class data_info():
 
 
-    def __init__(self,agent_num=5,train_mode=False,train_times=10000,each_model=True,epsilon=0.3):
+    def __init__(self,agent_num=5,train_mode=False,train_times=1000,net_load=False,test_train_mode=False,each_model=False,epsilon=0.3):
         # super(self).__init__()
         self.Time = time.time()
         self.agent_num = agent_num
         self.train_mode = train_mode
         self.train_times = train_times
         self.each_model = each_model
+        self.test_train_mode = test_train_mode
         self.epsilon = epsilon
+        self.net_load = net_load
         self.train_cnt = 1
 
         if self.agent_num <= 6:
@@ -123,15 +126,14 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt) for i in range(self.max_day+1)]
 
 
-        if self.each_model == True:
-            if self.train_mode == False:
+        if self.net_load == True or self.train_mode == False:
+            if self.each_model == True:
                 for i in range(len(self.predict_net)):
                     serializers.load_npz('./predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_10000.net', self.predict_net[i].net)
             # if self.predict_train == False:
             #     for i in range(len(self.player_net)):
             #         serializers.load_npz('./player_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/modify_predict_role_train_player_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_10000.net', self.player_net[i].net)
-        else:
-            if self.train_mode == False:
+            else:
                 serializers.load_npz("./predict_model/agent"+str(self.agent_num)+"/one_model/modify_predict_role_train_daily_num_"+str(self.agent_num)+"_train_10000.net", self.predict_net[0].net)
             # if self.predict_train == False:
             #     serializers.load_npz("./player_model/agent"+str(self.agent_num)+"/one_model/modify_predict_role_train_player_num_"+str(self.agent_num)+"_train_10000.net", self.player_net[0].net)
@@ -180,7 +182,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.my_agent_id,#自分の番号
             # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
             self.my_role,#自分の役職
-            # self.other_role.reshape(-1)#自分の主観情報
+            self.other_role.reshape(-1)#自分の主観情報
             ))
 
         # alpha_common_feats = self.daily_vector[np.where(self.my_agent_id == 1)[0][0],:]
@@ -233,10 +235,9 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.my_agent_id[self.base_info["agentIdx"]-1] = 1
 
         self.other_role.fill(0)
-        for i,role in self.base_info["roleMap"].items():
-            i = int(i)
-            if i != self.base_info["agentIdx"]:
-                self.other_role[i-1][self.side_to_num[role]] = 1
+        for agent,role in self.base_info["roleMap"].items():
+            agent = int(agent)-1
+            self.other_role[agent][self.side_to_num[role]] = 1
 
         self.ag_esti_list.fill(0)
         self.disag_esti_list.fill(0)
@@ -317,7 +318,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
         est_role_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role]
         est_role_list = sorted(est_role_list,reverse=True)
-        # print(est_werewolf_list)
+
         for _,target in est_role_list:
             if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
                 return target + 1
@@ -378,8 +379,6 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 else:
                     role = 1
                 self.divined_list[agent][target][role] = 1
-                if agent == self.base_info["agentIdx"] - 1:
-                    self.other_role[target,role] = 1
             elif(3<len(talk_texts) and talk_texts[2][1:]=="IDENTIFIED"):
                 target = re.search(r"[0-9][0-9]",talk_texts[3]).group()
                 target = int(target) - 1
@@ -388,8 +387,6 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 else:
                     role = 1
                 self.identified_list[agent][target][role] = 1
-                if agent == self.base_info["agentIdx"] - 1:
-                    self.other_role[target,role] = 1
             elif(talk_texts[0]=="DIVINED"):
                 # print(talk_texts)
                 target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
@@ -400,8 +397,6 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     else:
                         role = 1
                     self.divined_list[agent][target][role] = 1
-                if agent == self.base_info["agentIdx"] - 1:
-                    self.other_role[target,role] = 1
             elif(talk_texts[0]=="IDENTIFIED"):
                 target = re.search(r"[0-9][0-9]",talk_texts[1]).group()
                 target = int(target) - 1
@@ -412,9 +407,6 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     else:
                         role = 1
                     self.identified_list[agent][target][role] = 1  
-                if agent == self.base_info["agentIdx"] - 1:
-                    self.other_role[target,role] = 1
-                # print(self.identified_list[agent][target])
             elif(talk_texts[0]=="GUARD"):
                 None
             elif(talk_texts[0]=="GUARDED"):
@@ -473,9 +465,9 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.role_cnt[self.num_to_role[t_role]] += 1
             if y_role == t_role:
                 self.correct_predict_cnt[self.num_to_role[t_role]]+=1
-            print(self.num_to_role[y_role], self.num_to_role[t_role])
+            # print(self.num_to_role[y_role], self.num_to_role[t_role])
         # print(self.correct_predict_cnt)
-        print()
+        # print()
         if collections.Counter([self.num_to_role[role] for role in y]) == self.utiwake:
             self.utiwake_cnt+= 1
 
@@ -535,7 +527,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     for x in self.predict_x[i]:
                         loss, accuracy, predict_y = self.predict_net[0].eval(np.array(x).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
                         self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
-                        self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
+                        if self.train_mode==False:
+                            self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
 
     def save_each_model(self):
         for i in range(len(self.predict_net)):
@@ -685,15 +678,16 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
 
     def finish(self):
-        if self.train_mode == True:
+        if self.train_mode == True or (self.train_mode == False and self.test_train_mode == True):
             if self.each_model == True:
                 self.addVectorToEachModel()
             else:
                 self.addVectorToOneModel()
 
 
-        if self.train_mode == True:
+        if self.train_mode == True or (self.train_mode == False and self.test_train_mode == True):
             self.predict_model_train()
+            self.predict_model_eval()
         else:
             self.predict_model_eval()
 
@@ -776,35 +770,54 @@ class predict_role(predict_role):
         x,t = self.memory.choice(10)
         with chainer.using_config("train", True), chainer.using_config("enable_backprop", True):
             y = self.net(x)
-            # print(F.mean(F.mean(F.reshape(F.sigmoid(y),(-1,self.agent_num,self.role_num)),axis=2),axis=1).__sub__(self.t_role_cnt.__abs__())
-            loss = F.sigmoid_cross_entropy(y,t)# + F.mean(F.mean(F.reshape(F.sigmoid(y).__mul__(np.array(np.argsort(np.argsort(-np.array(y.array).reshape((-1,self.agent_num,self.role_num)),axis=2),axis=2) < 1).astype(np.int32).reshape(y.shape[0],-1)),(-1,self.agent_num,self.role_num)),axis=1).__sub__(self.t_role_cnt.__abs__())
-            # print(loss,"sigmoid")
-            # loss = F.mean(F.mean(F.reshape(F.sigmoid(y).__mul__(np.array(np.argsort(np.argsort(-np.array(y.array).reshape((-1,self.agent_num,self.role_num)),axis=2),axis=2) < 1).astype(np.int32).reshape(y.shape[0],-1)),(-1,self.agent_num,self.role_num)),axis=1).__sub__(self.t_role_cnt.__abs__())
-            # loss = F.sum(F.mean(F.mean(-F.log(F.sigmoid(y))*t-F.log(F.sigmoid(1-y))*(1-t),axis=0),axis=0))#お手製シグモイドクロスエントロピー
+            #お手製シグモイドクロスエントロピー
+            # loss = F.sum(F.mean(F.mean(-F.log(F.sigmoid(y))*t-F.log(1-F.sigmoid(y))*(1-t),axis=0),axis=0))
+            loss = F.sigmoid_cross_entropy(y,t)
+            # loss = 0
 
-            y_select = np.argsort(np.argsort(y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=2)
-            role_select = np.argsort(np.argsort(y.array.reshape(-1,self.agent_num,self.role_num),axis=1),axis=1)
+            #お手製softmaxcrossentropy
+            # loss = F.softmax_cross_entropy(F.reshape(y,(-1,self.agent_num,self.role_num),np.where(t.reshape(-1,self.agent_num,self.role_num)==1,axis=2)))
+            # loss = F.mean(F.sum(F.sum(-F.log(F.softmax(F.reshape(y,(-1,self.agent_num,self.role_num)),axis=2)).__mul__(t.reshape(-1,self.agent_num,self.role_num)),axis=1),axis=1))
+            y_select = np.argsort(np.argsort(-y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=2)
+
+            role_select = np.argsort(np.argsort(-y.array.reshape(-1,self.agent_num,self.role_num),axis=1),axis=1)
             y_role_cnt = np.sum(np.array(y_select < 1).astype(np.int32),axis=1)
             # print(y[0])
             # print(y_select[0])
             # print(y_role_cnt[0])
             # print(role_select[0])
             # print(self.t_role_cnt)
+
+            ##多めに推定した役職の値分追加し，少なめに推定した役職の1-xを追加
+
             for k in range(y_select.shape[0]):
                 for j in range(y_select.shape[2]):
                     for i in range(y_select.shape[1]):
-                        if y_role_cnt[k][j] <= role_select[k][i][j] and role_select[k][i][j] < self.t_role_cnt[j]:
-                            loss += 0.1*(-F.sigmoid(y)[k][i*self.role_num+j]+1)
+                        # if y_role_cnt[k][j] <= role_select[k][i][j] and role_select[k][i][j] < self.t_role_cnt[j]:
+                        #     loss += (-F.sigmoid(y)[k][i*self.role_num+j]+1)
                             # print(k,i,j,"少ない",y[k][i*self.role_num+j],(-F.sigmoid(y)[k][i*self.role_num+j]+1))
-                        elif self.t_role_cnt[j] <= role_select[k][i][j] and role_select[k][i][j] < y_role_cnt[k][j]:
-                            loss += 0.1*F.sigmoid(y)[k][i*self.role_num+j]
+                        if self.t_role_cnt[j] <= role_select[k][i][j] and role_select[k][i][j] < y_role_cnt[k][j]:
+                            loss += 0.5*F.sigmoid(y)[k][i*self.role_num+j]
                             # print(k,i,j,"多い",y[k][i*self.role_num+j],F.sigmoid(y)[k][i*self.role_num+j])
+
+            ##各役職のらしさ総和が内訳のカウントとどれほど違うか
+            # print(F.sum((F.mean(F.sum(F.sigmoid(F.reshape(y,(-1,self.agent_num,self.role_num))).__mul__(np.array(np.argsort(np.argsort(-y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=2) < 1).astype(np.int32)),axis=1),axis=0) - self.t_role_cnt).__abs__()))
+            loss += 0.5*(F.sum((F.mean(F.sum(F.sigmoid(F.reshape(y,(-1,self.agent_num,self.role_num))).__mul__(np.array(np.argsort(np.argsort(-y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=2) < 1).astype(np.int32)),axis=1),axis=0) - self.t_role_cnt))**2)
+
+            ##各役職の上位を持ってきて内訳の総和との差をとる
+            # for i in range(y_select.shape[0]):
+            #     for k in range(y_select.shape[2]):
+            #         for j in range(y_select.shape[1]):
+            #             if role_select[i][j][k] < self.t_role_cnt[k]:
+            #                 loss += abs((F.sigmoid(y)[i][j*self.role_num+k]-1))
+
+            # print(loss)
+
 
             y = y.array.reshape((-1,self.agent_num,self.role_num))
             t = t.reshape((-1,self.agent_num,self.role_num))
-            # print(loss,"new")
-            # print((-F.log(F.sigmoid(y))*t)[0])
-            # print((-F.log(F.sigmoid(-y+1))*(-t+1))[0])
+            
+
             y = np.array(np.argsort(np.argsort(-y,axis=2),axis=2) < 1)
             accuracy = np.count_nonzero(np.logical_and(y,t))/np.count_nonzero(t)
             # print(np.count_nonzero(np.logical_and(y,t)[0]),np.count_nonzero(t[0]),accuracy)
@@ -817,15 +830,13 @@ class predict_role(predict_role):
     def eval(self,x,t):
         with chainer.using_config("train", False), chainer.using_config("enable_backprop", False):
             y = self.net(x)
-            # print(F.sum(F.softmax(y.astype(np.float32),axis=1),axis=0))
-            loss = F.sigmoid_cross_entropy(y,t) #+ F.sum(abs(F.sum(F.softmax(y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=1)-self.t_role_cnt)
+            loss = F.sigmoid_cross_entropy(y,t)
             y = y.array.reshape((self.agent_num,self.role_num))
             t = t.reshape((self.agent_num,self.role_num))
-            # print(y)
+            # print(-F.log(F.softmax(y,axis=1)))
             # print(t)
+            # print(F.sum(-F.log(F.softmax(y,axis=1))*t))
             y = np.array(np.argsort(np.argsort(-y,axis=1),axis=1) < 1)
-            # print(y)
-            # print(t)
             accuracy = np.count_nonzero(np.logical_and(y,t))/np.count_nonzero(t)
             # y = self.decode(y)
             # print(y)
