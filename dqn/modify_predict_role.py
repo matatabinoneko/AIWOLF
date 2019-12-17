@@ -15,9 +15,7 @@ import aiwolfpy.contentbuilder as cb
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-import chainer
-
-from aiwolf_func_modify_predict_role import *
+from pytorch import *
 
 myname = 'matatabi'
 
@@ -25,7 +23,7 @@ class SampleAgent(object):
     def __init__(self, agent_name):
         ## myname ##
         self.myname = agent_name
-        self.w_data = modify_predict_role_data_info(agent_num=6,train_mode=False,train_times=1000,net_load=False,test_train_mode=False,each_model=False,kanning=True)
+        self.w_data = Environment(agent_num=6,train_mode=False,train_times=1000,net_load=False,test_train_mode=False,each_model=False,kanning=False)
 
 
 

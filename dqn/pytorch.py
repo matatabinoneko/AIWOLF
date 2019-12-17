@@ -1,32 +1,39 @@
 import aiwolfpy
 import aiwolfpy.contentbuilder as cb
+
 import numpy as np
 import re
 import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-import chainer
-import chainer.links as L
-import chainer.functions as F
-from chainer import serializers
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 import time
+import random
 
 import matplotlib.pyplot as plt
 import collections
-from collections import defaultdict
+from collections import *
+X_T = namedtuple("X_T",("state","label"))
 
+
+from predict_model import PredictRole
+from agent import Agent
 
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from modify_vector.aiwolf_func_modify_vector import *
 
 
-class modify_predict_role_data_info(modify_vector_data_info):
-# class data_info():
 
 
+
+
+
+class Environment():
     def __init__(self,agent_num=5,train_mode=False,train_times=1000,net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False):
         # super(self).__init__()
         self.Time = time.time()
@@ -122,28 +129,38 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.not_trust_my_skill = 0
 
         self.t_role_cnt= np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
-        # self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=200, n_output=self.agent_num*self.role_num) for i in range(self.agent_num)]
-        # self.player_net = [predict_role(n_input=self.player_vector_length,n_hidden=50,n_output=self.role_num) for i in range(self.agent_num)]
-        self.predict_net = [predict_role(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt) for i in range(self.max_day+1)]
+
+        self.player = Agent(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_mode=self.train_mode)
 
 
         if self.net_load == True or self.train_mode == False:
             if self.each_model == True:
                 for i in range(len(self.predict_net)):
                     serializers.load_npz('./predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_10000.net', self.predict_net[i].net)
-            # if self.predict_train == False:
-            #     for i in range(len(self.player_net)):
-            #         serializers.load_npz('./player_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/modify_predict_role_train_player_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_10000.net', self.player_net[i].net)
             else:
-                serializers.load_npz("./predict_model/agent"+str(self.agent_num)+"/one_model/modify_predict_role_train_daily_num_"+str(self.agent_num)+"_train_10000.net", self.predict_net[0].net)
-            # if self.predict_train == False:
-            #     serializers.load_npz("./player_model/agent"+str(self.agent_num)+"/one_model/modify_predict_role_train_player_num_"+str(self.agent_num)+"_train_10000.net", self.player_net[0].net)
+                self.player.pred_model.model = torch.load('./predict_model/agent'+str(self.agent_num)+'/one_model/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_train_10000.net')
+            path = "./dqn_model/agent"+str(self.agent_num)+'/'
+            file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
+            self.player.brain.model = torch.load(path+file_name)
 
-        self.graph_name = 'modify_predict_role_'
+
+        self.graph_name = 'dqn_'
         self.graph_name += "agent_"+str(self.agent_num)+"_"
         self.graph_name += "train_" if self.train_mode == True else "test_"
         self.graph_name += str(self.train_times)+"_"
         self.graph_name += "each_model" if self.each_model == True else "one_model"
+
+
+        #####
+        ## 強化学習用特徴量
+        #####
+
+        self.action_to_num = {"vote":0,"divine":1,"guard":2,"attack":3}
+        self.request_action = [0 for i in range(len(self.action_to_num))]
+        self.state = []
+        self.next_state = []
+        self.reward = torch.tensor([0]).float()
+        self.action = ''
 
     def createDailyVector(self):
         #カミングアウトのリスト　占い結果　占い師とカミングアウトした順番　前回の投票宣言　前回の投票先　生死情報　肯定的意見　否定的意見　発話の割合
@@ -192,12 +209,6 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
 
     def initialize(self, base_info, diff_data, game_setting):
-        if self.kanning==True:
-            self.answer = []
-            with open("../AIWolf-ver0.5.6/role.txt","r") as f:
-                for agent in f.readlines():
-                    agent = agent.strip("\n")
-                    self.answer.append(agent)
 
         # super(self).initialize()
         self.base_info = base_info
@@ -251,93 +262,15 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.disag_esti_list.fill(0)
 
 
-        self.predict_x = [[] for i in range(len(self.predict_net))]
+        self.predict_x = [[] for i in range(self.max_day)]
         self.predict_t = [0 for i in range(self.agent_num*self.role_num)]
         # self.player_x = [[]for i in range(self.agent_num)]
         # self.predict_t = [0 for i in range(self.agent_num)]
 
-
-    def randomSelect(self):
-        while(True):
-            target = np.random.randint(0,self.game_setting["playerNum"])
-            if target != self.base_info["agentIdx"]-1 and self.alive_list[target][self.alive_to_num["alive"]]==1:
-                return target
-
-
-    def selectAgent(self,target_role):
-        #返り値は１始まり
-
-        if self.kanning == True:
-            for target,role in enumerate(self.answer):
-                if role == target_role and self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1: 
-                    return target + 1
-            return self.randomSelect()
-
-        if self.train_mode == True:
-            if np.random.random() < self.epsilon:
-                return self.randomSelect()
-
-        if self.each_model == True:
-            use_model = self.base_info["day"]
-        else:
-            use_model = 0
-
-        self.createDailyVector()
-        est_role_list = self.predict_net[use_model].net(self.createXPredictData().reshape(1,-1)).reshape(-1).array.reshape(self.agent_num,self.role_num)
-
-        # est_werewolf_list = list(zip(est_werewolf_list,range(1,len(est_werewolf_list)+1)))
-        # est_role_list = []
-
-        # player_x_data = self.createXPlayerData()
-        # for i in range(self.agent_num):
-        #     role = np.argmax(self.player_net[use_model].net(player_x_data[i,:].reshape(1,-1)).reshape(-1).array)
-        #     # role = [key for key,value in self.role_to_num.items() if value == role][0]
-        #     role = self.num_to_role[role]
-        #     est_role_list.append(role)
-
-        # # print(est_werewolf_list)
-        # # print(est_role_list)
-
-        # if target_role == "WEREWOLF":
-        #     # print(est_role_list)
-        #     est_werewolf_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == "WEREWOLF"]
-        #     est_werewolf_list = sorted(est_werewolf_list,reverse=True)
-        #     # print(est_werewolf_list)
-        #     for _,target in est_werewolf_list:
-        #         if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
-        #             return target + 1
-    
-        # elif target_role == "SEER":
-        #     est_seer_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == "SEER"]
-        #     est_seer_list = sorted(est_seer_list,reverse=True)
-        #     for _,target in est_seer_list:
-        #         if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
-        #             return target + 1
-
-        # elif target_role == "VILLAGER":
-        #     # print([x for i,x in zip(est_role_list,est_werewolf_list)])
-        #     est_villager_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == "VILLAGER"]
-        #     est_villager_list = sorted(est_villager_list,reverse=True)
-        #     for _,target in est_villager_list:
-        #         if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
-        #             return target
-
-        # elif target_role == "POSSESSED":
-        #     # print([x for i,x in zip(est_role_list,est_werewolf_list)])
-        #     est_possessed_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == "POSSESSED"]
-        #     est_possessed_list = sorted(est_possessed_list,reverse=True)
-        #     for _,target in est_possessed_list:
-        #         if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
-        #             return target+1
-
-        est_role_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role]
-        est_role_list = sorted(est_role_list,reverse=True)
-
-        for _,target in est_role_list:
-            if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
-                return target + 1
-        return -1 
-
+        self.state=None
+        self.next_state=None
+        self.reward = torch.tensor([0]).float()
+        self.action=None
 
     def createXPredictData(self):
         # common_feats = np.hstack((self.base_info["day"],self.my_agent_id,self.my_role,))
@@ -345,8 +278,171 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.createSubFeat()
         self.createDailyVector()
         # print(np.hstack((self.daily_vector.reshape(-1),common_feats, alpha_common_feats)).astype(np.float32).shape)
-        return np.hstack((self.daily_vector.reshape(-1),self.sub_feat.reshape(-1))).astype(np.float32)
+        return torch.from_numpy(np.hstack((self.daily_vector.reshape(-1),self.sub_feat.reshape(-1))).astype(np.float32).reshape(1,-1)).float()
 
+
+    def randomSelect(self,votable_mask):
+        while(True):
+            target = np.random.randint(0,len(votable_mask))
+            if votable_mask[target]==True:
+                return target
+
+
+    def selectAgent(self,fase):
+        self.createDailyVector()
+        state = self.createXPredictData()
+        votable_mask = [self.alive_list[i][self.alive_to_num["alive"]]==1 and i != self.base_info["agentIdx"]-1 for i in range(self.agent_num)]
+        if fase == "vote":
+            return self.player.selectAgent(state=state,votable_mask=votable_mask,agent_num=self.agent_num,role_num=self.role_num,num_to_role=self.num_to_role)
+        else:
+
+            if self.base_info["myRole"] in ["VILLAGER","SEER","MEDIUM","BODYGUARD"]:
+                target_list = ["WEREWOLF","POSSESSED"]
+            else:
+                target_list = ["SEER","BODYGUARD","MEDIUM","VILLAGER"]
+            for target_role in target_list:
+                est_role_list = self.player.pred_model.model(state).reshape(-1).detach().numpy().reshape(self.agent_num,self.role_num)
+
+                est_role_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role]
+                est_role_list = sorted(est_role_list,reverse=True)
+
+                for _,target in est_role_list:
+                    if votable_mask[target]==True:
+                        return target
+
+            return self.randomSelect(votable_mask)
+
+
+    def talk(self):
+        if(self.base_info['myRole']=="VILLAGER"):
+            # if(self.done_last_commingout == False):
+            #     self.done_last_commingout = True
+            #     return cb.comingout((self.base_info['agentIdx']),"VILLAGER")
+            if(self.have_ever_vote == False):
+                self.have_ever_vote = True
+                # return cb.vote(np.argmax(np.sum(self.declaration_vote_list)) + 1)
+                return cb.vote(self.selectAgent("talk")+1)
+            else:
+                return cb.over()
+        elif (self.base_info['myRole'] == 'SEER'):
+            if(self.done_last_commingout == False):
+                self.done_last_commingout = True
+                return cb.comingout((self.base_info['agentIdx']),"SEER")
+            if(self.not_reported == True):
+                self.not_reported = False
+                return self.myresult
+            if self.have_ever_vote == False:
+                self.have_ever_vote = True
+                return cb.vote(self.selectAgent("talk")+1)
+            return cb.over()
+        elif self.base_info['myRole'] == 'POSSESSED':
+            if(self.done_last_commingout == False):
+                self.done_last_commingout = True
+                return cb.comingout((self.base_info['agentIdx']),self.fake_role)
+            if(self.not_reported == True):
+                self.do_fake_report = True
+                self.not_reported = False
+                return self.myresult
+            return cb.over()
+        elif self.base_info['myRole'] == 'WEREWOLF':
+            if(self.have_ever_vote == False):
+                self.have_ever_vote = True
+                # return cb.vote(np.argmax(np.sum(self.declaration_vote_list)) + 1)
+                return cb.vote(self.selectAgent("talk")+1)
+            else:
+                return cb.over()
+        elif self.base_info['myRole'] == 'MEDIUM':
+            if(self.done_last_commingout == False):
+                self.done_last_commingout = True
+                return cb.comingout((self.base_info['agentIdx']),"MEDIUM")
+            if(self.not_reported == True):
+                self.not_reported = False
+                return self.myresult
+            if self.have_ever_vote == False:
+                self.have_ever_vote = True
+                return cb.vote(self.selectAgent("talk")+1)                
+
+        return cb.over()
+
+
+    def whisper(self):
+        # print("whisper")
+        return cb.over()
+
+    def vote(self):
+        # print("vote")
+        self.next_state = self.createXPredictData()
+        if self.state is not None:
+            self.player.memorize_state(self.state,torch.tensor(self.action).long().view(1,1),self.next_state,self.reward)
+
+        self.request_action = self.encode(self.action_to_num["vote"],len(self.action_to_num))
+        self.state = self.createXPredictData()
+        self.action = self.selectAgent("vote")
+        return self.action + 1
+        # if self.base_info["myRole"] in self.werewolf_list:
+        #     for target_role in ["SEER","VILLAGER","POSSESSED"]:
+        #         target = self.selectAgent()
+        #         if target != -1:
+        #             return target
+        #     return self.randomSelect(self.base_info,self.alive_list,self.alive_to_num)
+        # elif self.base_info["myRole"] in self.human_list:
+
+            # for target_role in ["WEREWOLF", "POSSESSED"]:
+            #     target = self.selectAgent()
+            #     if target != -1:
+            #         return target
+            # return self.randomSelect(self.base_info,self.alive_list,self.alive_to_num)
+
+    def attack(self):
+        return self.selectAgent("attack") + 1
+        # print("attack")
+        # for target_role in ["SEER","VILLAGER","POSSESSED"]:
+        #     target = self.selectAgent()
+        #     if target != -1:
+        #         return target
+        # return self.randomSelect(self.base_info,self.alive_list,self.alive_to_num)
+
+    def divine(self):
+        return self.selectAgent("divine") + 1
+        # print("devine")
+        # for target_role in ["WEREWOLF", "POSSESSED"]:
+        #     target = self.selectAgent()
+        #     if target != -1:
+        #         return target
+        # return self.randomSelect(self.base_info,self.alive_list,self.alive_to_num)
+
+    def guard(self):
+        # print("guard")
+        return self.selectAgent("guard") + 1
+        # for target_role in ["SEER","VILLAGER"]:
+        #     target = self.selectAgent()
+        #     if target != -1:
+        #         return target
+        # return self.randomSelect(self.base_info,self.alive_list,self.alive_to_num)
+
+
+    def updateTalk(self,index):
+        #会話の日にちとIDを記憶
+        # talk_day_id[self.].append(agent)
+        agent = self.diff_data["agent"][index]-1
+        talk_texts = self.diff_data["text"][index]
+        if talk_texts.split(' ')[0]=="AND":
+            bracket = 0
+            front = 0
+            for i in range(len(talk_texts)):  
+                if talk_texts[i]=='(':
+                    bracket += 1
+                    if front == 0:
+                        front = i+1
+                elif talk_texts[i] == ')':
+                    bracket -= 1
+                    if(bracket==0):
+                        self.understand_text(agent,talk_texts[front:i])
+                        front = 0
+        elif talk_texts.split(' ')[0]=="BECAUSE" or talk_texts.split(' ')[0]=="REQUEST":
+            None
+        else:
+            self.understand_text(agent,talk_texts)
   
     def understand_text(self,agent,talk_texts):
             '''talkのtext部分を解釈可能にparse'''
@@ -439,18 +535,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 print(talk_texts,"ERROR")
 
     def updateVector(self):
-        # common_feats = [self.base_info["day"]]
-        # alpha_common_feats = self.daily_vector[self.base_info["agentIdx"]-1,:]
-        # self.createDailyVector()
-
-        # player_x_data = self.createXPlayerData()
-
-        # for i in range(len(self.daily_vector)):
-        #     self.player_x[self.base_info["day"]].append(player_x_data[i,:].tolist())
         self.predict_x[np.where(self.day == 1)[0][0]+1].append(self.createXPredictData().tolist())
-        # for i in range(len(self.predict_x)):
-        #     print(len(self.predict_x[i]))
-        # print(self.player_x)
+
 
     def countEachRole(self,index):
         agent = self.diff_data["agent"][index]-1
@@ -460,98 +546,74 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
     def decode(self,line):
         tmp = []
-        # print(line) 
         for l in line:
-            # print(tmp)
-            # print(l)
-            # print(np.where(l==True)[0])
             tmp.append(np.where(l==True)[0][0])
         return tmp
 
+    def encode(self,data,dim):
+        out = [0 for i in range(dim)]
+        out[data] = 1
+        return out
 
     def update_predict_result(self,y,t):
-        y = self.decode(y.reshape(self.agent_num,self.role_num))
-        t = self.decode(t.reshape(self.agent_num,self.role_num))
-        # print(y)
-        # print(t)
-        for y_role, t_role in zip(y,t):
-            self.predict_cnt[self.num_to_role[y_role]] += 1
-            self.role_cnt[self.num_to_role[t_role]] += 1
-            if y_role == t_role:
-                self.correct_predict_cnt[self.num_to_role[t_role]]+=1
-            # print(self.num_to_role[y_role], self.num_to_role[t_role])
-        # print(self.correct_predict_cnt)
-        # print()
-        if collections.Counter([self.num_to_role[role] for role in y]) == self.utiwake:
-            self.utiwake_cnt+= 1
+        y_list = [self.decode(y) for y in y]
+        t = self.decode(np.array(t).reshape(self.agent_num,self.role_num))
+
+        for y in y_list:
+            for y_role, t_role in zip(y,t):
+                self.predict_cnt[self.num_to_role[y_role]] += 1
+                self.role_cnt[self.num_to_role[t_role]] += 1
+                if y_role == t_role:
+                    self.correct_predict_cnt[self.num_to_role[t_role]]+=1
+                # print(self.num_to_role[y_role], self.num_to_role[t_role])
+            # print(self.correct_predict_cnt)
+            # print()
+            if y[self.base_info["agentIdx"]-1] == t[self.base_info["agentIdx"]-1]:
+                self.correct_myrole+=1
+
+            if collections.Counter([self.num_to_role[role] for role in y]) == self.utiwake:
+                self.utiwake_cnt+= 1
 
 
-        tmp = 0
-        exist_werewolf = False
-        for agent,y_role in enumerate(y):
-            if self.num_to_role[y_role] == "WEREWOLF":
-                exist_werewolf = True
-                if self.alive_list[agent][self.alive_to_num.get("alive")] == 1:
-                    tmp += 1
-            
-            if self.num_to_role.get((np.where(self.my_role==1)[0][0])) in ["SEER","MEDIUM"]:
-                if self.num_to_role[y_role] in self.human_list:
-                    if self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
-                        self.not_trust_my_skill += 1
-                    elif self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1:
-                        self.trust_my_skill += 1
-                elif self.num_to_role[y_role] in self.werewolf_list:
-                    if self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1:
-                        self.not_trust_my_skill += 1
-                    elif self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
-                        self.trust_my_skill += 1
+            tmp = 0
+            exist_werewolf = False
+            for agent,y_role in enumerate(y):
+                if self.num_to_role[y_role] == "WEREWOLF":
+                    exist_werewolf = True
+                    if self.alive_list[agent][self.alive_to_num.get("alive")] == 1:
+                        tmp += 1
+                
+                if self.num_to_role.get((np.where(self.my_role==1)[0][0])) in ["SEER","MEDIUM"]:
+                    if self.num_to_role[y_role] in self.human_list:
+                        if self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
+                            self.not_trust_my_skill += 1
+                        elif self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1:
+                            self.trust_my_skill += 1
+                    elif self.num_to_role[y_role] in self.werewolf_list:
+                        if self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1:
+                            self.not_trust_my_skill += 1
+                        elif self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
+                            self.trust_my_skill += 1
 
-        if tmp != 0 or exist_werewolf==False:
-            self.alive_werewolf += 1
-        # else:
-        #     if exist_werewolf == True:
-        #         for agent,y_role in enumerate(y):
-        #             print(self.num_to_role[y_role],self.alive_list[agent][self.alive_to_num.get("alive")])
-        #         print()
+            if tmp != 0 or exist_werewolf==False:
+                self.alive_werewolf += 1
 
-        if y[self.base_info["agentIdx"]-1] == t[self.base_info["agentIdx"]-1]:
-            self.correct_myrole+=1
+
+
 
     def predict_model_train(self):
-        for i in range(len(self.predict_net)):
-            if 10 < len(self.predict_net[i].memory):
-                loss, accuracy = self.predict_net[i].train()
-                # print(loss,accuracy)
-                self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
+        self.player.update_pred_model()
 
     def predict_model_eval(self):
-        # if self.each_model == True:
-        #     for i in range(len(self.predict_x)):
-        #         loss, accuracy, predict_y = self.predict_net[i].eval(np.array(self.predict_x[i]).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
-        #         self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
-        #         self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
-
-
-        # else:
-            # for i in range(1,len(self.predict_x)):
-            #     index = i
-            #     if self.max_day < index:
-            #         index = self.max_day
-            #     loss, accuracy, predict_y = self.predict_net[0].eval(np.array(self.predict_x[i]).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
-            #     # print(predict_y,self.predict_t)
-            #     self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
-            #     self.predict_net[index].memory.addLossAccuracy(loss,accuracy)
-            for i in range(len(self.predict_x)):
-                if 0 < len(self.predict_x[i]):
-                    # print(np.array(self.predict_x[i]).reshape(1,-1).astype(np.float32))
-                    # print(np.array(self.predict_t).reshape(1,-1).astype(np.int32))
-                    # print(np.array(self.predict_x[i]).reshape(data_num,-1).astype(np.float32))
-                    # print(np.tile(np.array(self.predict_t).reshape(1,-1),(data_num,1)).astype(np.int32))
-                    for x in self.predict_x[i]:
-                        loss, accuracy, predict_y = self.predict_net[0].eval(np.array(x).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
-                        self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
-                        if self.train_mode==False:
-                            self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
+        predict_y = self.player.eval_pred_model(state=self.predict_x, label=self.predict_t)
+        self.update_predict_result(predict_y,self.predict_t)
+        # for i in range(len(self.predict_x)):
+        #     if 0 < len(self.predict_x[i]):
+        #         for x in self.predict_x[i]:
+        #             predict_y = self.player.eval(state=np.array(x).reshape(1,-1).astype(np.float32), label=np.array(self.predict_t).reshape(1,-1).astype(np.int32),agent_num=self.agent_num,role_num=self.role_num)
+        #             self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
+        #             if self.train_mode==False:
+        #                 self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
 
     def save_each_model(self):
         for i in range(len(self.predict_net)):
@@ -569,12 +631,14 @@ class modify_predict_role_data_info(modify_vector_data_info):
     def save_one_model(self):
         daily_path = './net_folder/predict_model/agent'+str(self.agent_num)+'/one_model/'
         os.makedirs(daily_path,exist_ok=True)
-        file_path = 'modify_predict_role_train_daily_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
-        chainer.serializers.save_npz(daily_path+file_path, self.predict_net[0].net)
-        # player_path = './net_folder/player_model/agent'+str(self.agent_num)+'/one_model/'
-        # os.makedirs(player_path,exist_ok=True)
-        # file_path = 'modify_predict_role_train_player_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
-        # chainer.serializers.save_npz(player_path+file_path, self.player_net[0].net)
+        file_name = 'modify_predict_role_train_daily_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
+        torch.save(self.player.pred_model.model, daily_path+file_name)
+
+    def save_dqn_model(self):
+        path = "./net_folder/dqn_model/agent"+str(self.agent_num)+'/'
+        os.makedirs(path,exist_ok=True)
+        file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
+        torch.save(self.player.brain.model,path+file_name)
 
     def addVectorToEachModel(self):
         
@@ -589,7 +653,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
     def addVectorToOneModel(self):
         for i in range(1,len(self.predict_x)):
             if len(self.predict_x[i]) != 0:
-                self.predict_net[0].addVector(self.predict_x[i],self.predict_t)
+                self.player.memorize_pred_label(torch.tensor(self.predict_x[i],dtype=torch.float32),torch.tensor([self.predict_t],dtype=torch.float32))
         # if self.predict_train == True:
         #     for i in range(len(self.player_x)):
         #         for j in range(len(self.player_x[i])):
@@ -664,10 +728,11 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 sum_correct_pred += self.correct_predict_cnt[role]
                 sum_role_pred += self.role_cnt[role]
 
-        for i in range(len(self.predict_net)):
-            if 0 < len(self.predict_net[i].memory.accuracy_memory):
-                # print(len(self.player_net[i].memory.accuracy_memory))
-                print("day{:<2}  accuracy:{:<.2f}".format(i,np.mean(self.predict_net[i].memory.accuracy_memory)))
+        for i in range(self.max_day):
+            _,accuracy = self.player.pred_model.memory.getLossAccuracy(i)
+            if accuracy is not None:
+                accuracy = np.mean(accuracy)
+                print("day{:<2}  accuracy:{:<.2f}".format(i,accuracy))
         
         # print(sum_game_cnt)
         print("correct utiwake rate is {:.2f}".format(self.utiwake_cnt/sum_game_cnt))
@@ -683,19 +748,24 @@ class modify_predict_role_data_info(modify_vector_data_info):
         graph_name += "train_" if self.train_mode == True else "test_"
         graph_name += str(self.train_times)+"_"
         graph_name += "each_model" if self.each_model == True else "one_model"
-        fig.suptitle('modify_predict_role_ '+graph_name, fontsize=20)
+        fig.suptitle('dqn_ '+graph_name, fontsize=20)
         daily_loss = fig.add_subplot(2,2,1)
         plt.title("daily_loss")
         daily_accu = fig.add_subplot(2,2,2)
         plt.title("daily_accuracy")
-        for i in range(len(self.predict_net)):
-            if 0 < len(self.predict_net[i].memory.loss_memory):
-                daily_loss.plot(self.predict_net[i].memory.loss_memory,label="day"+str(i))
+        win_ratio = fig.add_subplot(2,2,3)
+        plt.title("win_ratio")
+        for i in range(self.max_day):
+            loss,accuracy = self.player.pred_model.memory.getLossAccuracy(i)
+            if loss:
+                daily_loss.plot(loss,label="day"+str(i))
                 plt.legend()
 
-            if 0 < len(self.predict_net[i].memory.accuracy_memory):
-                daily_accu.plot(self.predict_net[i].memory.accuracy_memory,label="day"+str(i))
+            if accuracy:
+                daily_accu.plot(accuracy,label="day"+str(i))
                 plt.legend()
+        win_ratio.plot(self.player.brain.memory.win_memory,label="win_ratio")
+        plt.legend()
         # plt.show()
         os.makedirs("graph_folder", exist_ok=True)
         plt.savefig("graph_folder/"+graph_name+'.png')
@@ -711,24 +781,25 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
         if self.train_mode == True or (self.train_mode == False and self.test_train_mode == True):
             self.predict_model_train()
-            self.predict_model_eval()
+            # self.predict_model_eval()
         else:
             self.predict_model_eval()
 
 
-        # if self.predict_train == True:
-        #     self.player_model_train()
-        # else:
-        #     self.player_model_eval()
+        with open("../AIWolf-ver0.5.6/winner.txt",'r') as f:
+            winner = f.readlines()
+            if winner[self.base_info["agentIdx"]-1] == winner[-1]:
+                self.reward = torch.tensor([1]).float()
+                win = True
+            else:
+                self.reward = torch.tensor([0]).float()
+                win = False
+        
+        # print(type(self.state),type(self.action),type(self.next_state),type(self.reward))
+        self.player.memorize_state(self.state,torch.tensor(self.action).long().view(1,1),None,self.reward)
 
-        if(self.train_cnt == self.train_times):
-            if self.train_mode == False:
-                self.display_game_result()
-            # else:
-            #     self.save_one_model()
-            #     self.save_each_model()
-
-            self.plot_accu_loss()
+        self.player.update_q_function()
+        self.player.updateWinRatio(win)
 
         self.train_cnt += 1
 
@@ -741,6 +812,79 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     self.save_each_model()
                 else:
                     self.save_one_model()
+                    self.save_dqn_model()
+
+        if(self.train_cnt == self.train_times):
+            if self.train_mode == False:
+                self.display_game_result()
+            # else:
+            #     self.save_one_model()
+            #     self.save_each_model()
+            self.plot_accu_loss()
+
+
+    def updateVoteList(self,index):
+        self.vote_list[self.diff_data["idx"][index]-1][self.diff_data["agent"][index]-1] = 1
+        # print(self.vote_list)
+
+    def updateAliveList(self,index):
+        # print(self.alive_to_num[self.diff_data["type"][index]])
+        agent = self.diff_data["agent"][index] - 1
+        self.alive_list[agent].fill(0)
+        self.alive_list[agent][self.alive_to_num[self.diff_data["type"][index]]] = 1
+
+    def updateVote_declare(self):
+        # super(self).updateVote_declare()
+        self.daily_vector.fill(0)
+        #7:発言と投票先が変わった数をカウント．
+        # print(self.declaration_vote_list)
+        # print(self.vote_list)
+        for i in range(self.agent_num):
+            if 1 not in self.declaration_vote_list[i]:
+                continue
+            for j in range(self.agent_num):
+                if self.vote_list[i][j]==1 and self.declaration_vote_list[i][j]==0:
+                    self.vote_another_people[i] += 1
+        self.last_declaration_vote_list += self.declaration_vote_list
+        self.last_vote_list[...] += self.vote_list
+        self.declaration_vote_list.fill(0)
+        self.vote_list.fill(0)
+
+    def getResult(self,index):
+        #昨夜の能力行使の結果を取得
+
+        # IDENTIFY
+        if self.diff_data['type'][index] == 'identify':
+            self.not_reported = True
+            self.myresult = self.diff_data['text'][index]
+            target = re.search(r"[0-9][0-9]",self.myresult).group()
+            target = int(target) - 1    
+            role = self.myresult.split(' ')[-1]        
+            self.other_role[target,self.side_to_num[role]] = 1
+            
+        # DIVINE
+        if self.diff_data['type'][index] == 'divine':
+            self.not_reported = True
+            self.myresult = self.diff_data['text'][index]
+            target = re.search(r"[0-9][0-9]",self.myresult).group()
+            target = int(target) - 1    
+            role = self.myresult.split(' ')[-1]        
+            self.other_role[target,self.side_to_num[role]] = 1
+
+            
+        # GUARD
+        if self.diff_data['type'][index] == 'guard':
+            self.myresult = self.diff_data['text'][index]
+
+
+    def getFakeResult(self):
+        # FAKE DIVINE
+        if self.fake_role == 'SEER':
+            self.not_reported = True
+            idx = self.selectAgent("divine")+1
+            if idx == -1:
+                idx = self.randomSelect(self.base_info,self.alive_list,self.alive_to_num)
+            self.myresult = 'DIVINED Agent[' + "{0:02d}".format(idx) + '] ' + 'HUMAN'
 
 
 # class predict_werewolf():  　
@@ -770,106 +914,3 @@ class modify_predict_role_data_info(modify_vector_data_info):
     
 #     def addVector(self, x, t):
 #         self.memory.append(x,t)
-
-class predict_role(predict_role):
-            
-
-    def __init__(self,n_input,n_hidden,n_output,agent_num,role_num,t_role_cnt):
-        self.net = MLP(n_input=n_input,n_hidden=n_hidden,n_output=n_output)
-        self.optimizer = chainer.optimizers.Adam()
-        self.optimizer.setup(self.net)
-        self.memory = Memory()
-        self.agent_num = agent_num
-        self.role_num = role_num
-        self.t_role_cnt= t_role_cnt
-    def decode(self,line):
-        tmp = []
-        for l in line:
-            # print(l)
-            # print(np.where(l==True)[0])
-            tmp.append(np.where(l==True)[0][0])
-        return tmp
-
-    def train(self):
-        x,t = self.memory.choice(10)
-        with chainer.using_config("train", True), chainer.using_config("enable_backprop", True):
-            y = self.net(x)
-            #お手製シグモイドクロスエントロピー
-            # loss = F.sum(F.mean(F.mean(-F.log(F.sigmoid(y))*t-F.log(1-F.sigmoid(y))*(1-t),axis=0),axis=0))
-            # loss = F.sigmoid_cross_entropy(y,t)
-
-            # loss = chainer.Variable(np.array(0).astype(np.float32))
-
-            #お手製softmaxcrossentropy
-            loss = F.mean(F.sum(F.sum(-F.log_softmax(F.reshape(y,(-1,self.agent_num,self.role_num)),axis=2).__mul__(t.reshape(-1,self.agent_num,self.role_num)),axis=1),axis=1))
-
-            softmax_y = F.softmax(F.reshape(y,(-1,self.agent_num,self.role_num)),axis=2)
-
-            y_select = np.argsort(np.argsort(-y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=2)
-
-            role_select = np.argsort(np.argsort(-y.array.reshape(-1,self.agent_num,self.role_num),axis=1),axis=1)
-            y_role_cnt = np.sum(np.array(y_select < 1).astype(np.int32),axis=1)
-            # print(y[0])
-            # print(y_select[0])
-            # print(y_role_cnt[0])
-            # print(role_select[0])
-            # print(self.t_role_cnt)
-
-            ##多めに推定した役職の値分追加し，少なめに推定した役職の1-xを追加
-
-            # for k in range(y_select.shape[0]):
-            #     for j in range(y_select.shape[2]):
-            #         for i in range(y_select.shape[1]):
-            #             if y_role_cnt[k][j] <= role_select[k][i][j] and role_select[k][i][j] < self.t_role_cnt[j]:
-                            # loss += (-F.sigmoid(y)[k][i*self.role_num+j]+1)
-                            # loss += 0.001*(1-softmax_y[k,i,j])/self.t_role_cnt[j]
-                            # print(k,i,j,"少ない",y[k][i*self.role_num+j],(-F.sigmoid(y)[k][i*self.role_num+j]+1),self.t_role_cnt[j])
-                        # if self.t_role_cnt[j] <= role_select[k][i][j] and role_select[k][i][j] < y_role_cnt[k][j]:
-                            # loss += F.sigmoid(y)[k][i*self.role_num+j]
-                            # loss += softmax_y[k,i,j]/self.t_role_cnt[j]
-                            # print(k,i,j,"多い",y[k][i*self.role_num+j],F.sigmoid(y)[k][i*self.role_num+j])
-
-            ##各役職のらしさ総和が内訳のカウントとどれほど違うか
-            ##sugmoid ver
-            # loss += (F.sum((F.mean(F.sum(F.sigmoid(F.reshape(y,(-1,self.agent_num,self.role_num))).__mul__(np.array(np.argsort(np.argsort(-y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=2) < 1).astype(np.int32)),axis=1),axis=0) - self.t_role_cnt))**2)
-            ##softmax ver
-            # loss += (F.sum((F.mean(F.sum(softmax_y.__mul__(np.array(np.argsort(np.argsort(-y.array.reshape(-1,self.agent_num,self.role_num),axis=2),axis=2) < 1).astype(np.int32)),axis=1),axis=0) - self.t_role_cnt))**2)
-
-
-            # print(loss)
-
-
-            y = y.array.reshape((-1,self.agent_num,self.role_num))
-            t = t.reshape((-1,self.agent_num,self.role_num))
-            
-
-            y = np.array(np.argsort(np.argsort(-y,axis=2),axis=2) < 1)
-            accuracy = np.count_nonzero(np.logical_and(y,t))/np.count_nonzero(t)
-            # print(np.count_nonzero(np.logical_and(y,t)[0]),np.count_nonzero(t[0]),accuracy)
-            self.net.cleargrads()
-            loss.backward()
-            self.optimizer.update()
-    
-            return loss.array, accuracy
-
-    def eval(self,x,t):
-        with chainer.using_config("train", False), chainer.using_config("enable_backprop", False):
-            y = self.net(x)
-            loss = F.sigmoid_cross_entropy(y,t)
-            y = y.array.reshape((self.agent_num,self.role_num))
-            t = t.reshape((self.agent_num,self.role_num))
-            # print(-F.log(F.softmax(y,axis=1)))
-            # print(t)
-            # print(F.sum(-F.log(F.softmax(y,axis=1))*t))
-            y = np.array(np.argsort(np.argsort(-y,axis=1),axis=1) < 1)
-            accuracy = np.count_nonzero(np.logical_and(y,t))/np.count_nonzero(t)
-            # y = self.decode(y)
-            # print(y)
-            y = y.reshape(-1)
-        return loss.array, accuracy, y
-
-
-    def addVector(self, x, t):
-        for i in range(len(x)):
-            self.memory.append(x[i],t)
-

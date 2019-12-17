@@ -532,9 +532,12 @@ class data_info():
             self.utiwake_cnt+= 1
 
         tmp = 0
+        exist_werewolf = False
         for agent,y_role in enumerate(y):
-            if self.num_to_role[y_role] == "WEREWOLF" and self.alive_list[agent] == 0:
-                tmp += 1
+            if self.num_to_role[y_role] == "WEREWOLF":
+                exist_werewolf = True
+                if self.alive_list[agent] == 0:
+                    tmp += 1
 
             if self.num_to_role.get((np.where(self.my_role==1)[0][0])) in ["SEER","MEDIUM"]:
                 # if not ((self.num_to_role[y_role] in self.human_list and (self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1)or (self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1)) or(self.num_to_role[y_role] in self.werewolf_list and (self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1) or (self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1)) ):
@@ -549,7 +552,7 @@ class data_info():
                         self.not_trust_my_skill += 1
                     elif self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
                         self.trust_my_skill += 1
-        if tmp != 0:
+        if tmp != 0 or exist_werewolf==False:
             self.alive_werewolf += 1
 
         if y[self.base_info["agentIdx"]-1] == t[self.base_info["agentIdx"]-1]:
@@ -576,8 +579,9 @@ class data_info():
             # loss, accuracy = self.daily_net[0].eval(daily_x, daily_t)
             # self.daily_net[0].memory.addLossAccuracy(loss,accuracy)
             for i in range(1,len(self.daily_x)):
-                loss, accuracy = self.daily_net[0].eval(np.array(self.daily_x[i]).reshape(1,-1).astype(np.float32), np.array(self.daily_t).reshape(1,-1).astype(np.int32))
-                self.daily_net[i].memory.addLossAccuracy(loss,accuracy)
+                if 0 < len(self.daily_x[i]):
+                    loss, accuracy = self.daily_net[0].eval(np.array(self.daily_x[i]).reshape(1,-1).astype(np.float32), np.array(self.daily_t).reshape(1,-1).astype(np.int32))
+                    self.daily_net[i].memory.addLossAccuracy(loss,accuracy)
 
 
     def player_model_train(self):

@@ -35,8 +35,8 @@ class SampleAgent(object):
         self.base_info = base_info
         # print("----update----")
         print("base_info",base_info,sep='\n')
-        # print("diff_data",diff_data,sep='\n')
-        # print("request=",request)
+        print("diff_data",diff_data,sep='\n')
+        print("request=",request)
 
     def dayStart(self):
         return None
