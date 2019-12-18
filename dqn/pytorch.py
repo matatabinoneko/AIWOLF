@@ -19,6 +19,7 @@ from collections import *
 X_T = namedtuple("X_T",("state","label"))
 
 
+
 from predict_model import PredictRole
 from agent import Agent
 
@@ -280,7 +281,7 @@ class Environment():
         self.createSubFeat()
         self.createDailyVector()
         # print(np.hstack((self.daily_vector.reshape(-1),common_feats, alpha_common_feats)).astype(np.float32).shape)
-        return torch.from_numpy(np.hstack((self.daily_vector.reshape(-1),self.sub_feat.reshape(-1))).astype(np.float32).reshape(1,-1)).float()
+        return np.hstack((self.daily_vector.reshape(-1),self.sub_feat.reshape(-1))).astype(np.float32).reshape(1,-1)
 
 
     def randomSelect(self,votable_mask):
@@ -303,7 +304,7 @@ class Environment():
             else:
                 target_list = ["SEER","BODYGUARD","MEDIUM","VILLAGER"]
             for target_role in target_list:
-                est_role_list = self.player.pred_model.model(state).reshape(-1).detach().numpy().reshape(self.agent_num,self.role_num)
+                est_role_list = self.player.pred_model.get_output(state).reshape(-1).detach().numpy().reshape(self.agent_num,self.role_num)
 
                 est_role_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role]
                 est_role_list = sorted(est_role_list,reverse=True)
@@ -375,7 +376,7 @@ class Environment():
         # print("vote")
         self.next_state = self.createXPredictData()
         if self.train_dqn_mode==True and self.state is not None:
-            self.player.memorize_state(self.state,torch.tensor(self.action).long().view(1,1),self.next_state,self.reward)
+            self.player.memorize_state(torch.tensor(self.state).float(),torch.tensor(self.action).float().view(1,1),torch.tensor(self.next_state),torch.tensor(self.reward).float())
 
         self.request_action = self.encode(self.action_to_num["vote"],len(self.action_to_num))
         self.state = self.createXPredictData()
@@ -800,7 +801,7 @@ class Environment():
         # print(type(self.state),type(self.action),type(self.next_state),type(self.reward))
 
         if self.train_dqn_mode == True:
-            self.player.memorize_state(self.state,torch.tensor(self.action).long().view(1,1),None,self.reward)
+            self.player.memorize_state(torch.tensor(self.state).float(),torch.tensor(self.action).long().view(1,1),None,torch.tensor(self.reward).float())
             self.player.update_q_function()
         self.player.updateWinRatio(win)
 

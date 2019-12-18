@@ -23,7 +23,7 @@ GAMMA = 0.9
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print("use {}".format(device))
+print("brain use {}".format(device))
     
 
 import sys
@@ -39,8 +39,7 @@ class ReplayMemory():
     def push(self,state,action,next_state,reward):
         if len(self.memory) < CAPACITY:
             self.memory.append(None)
-        
-        self.memory[self.index] = Transition(state,action,next_state,reward)
+        self.memory[self.index] = Transition(state.to(device),action.to(device),next_state.to(device),reward.to(device))
         self.index = (self.index + 1)%CAPACITY
     
     def sample(self,batch_size):
@@ -121,3 +120,6 @@ class Brain():
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+    def get_output(self,state):
+        return self.model(state.to(device)).to("cpu")

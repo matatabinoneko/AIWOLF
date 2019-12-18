@@ -16,6 +16,9 @@ from collections import *
 X_T = namedtuple("X_T",("state","label"))
 LOSSACC = namedtuple("LOSSACC",("loss","accuracy"))
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print("predict model use {}".format(device))
+
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -34,7 +37,7 @@ class Memory():
         if len(self.memory) < CAPACITY:
             self.memory.append(None)
         
-        self.memory[self.index] = X_T(x,t)
+        self.memory[self.index] = X_T(x.to(device),t.to(device))
         self.index = (self.index + 1)%CAPACITY
     
     def sample(self,batch_size):
@@ -90,7 +93,7 @@ class PredictRole():
 
         self.memory = Memory()
 
-        self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output)
+        self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
         print(self.model)
         self.criterion = nn.BCELoss()
         self.optimizer = optim.Adam(self.model.parameters(),lr=0.001)
@@ -102,16 +105,17 @@ class PredictRole():
         with torch.no_grad():
             for i,x in enumerate(state):
                 if 0 < len(x):
-                    pred = self.model(torch.tensor(x).view(1,len(x),-1).float())
-                    label_batch = torch.tensor(label).repeat(pred.shape[1],1).view(1,pred.shape[1],-1).float()
+                    x = torch.tensor(x).view(1,len(x),-1).float().to(device)
+                    pred = self.model(x)
+                    label_batch = torch.tensor(label).repeat(pred.shape[1],1).view(1,pred.shape[1],-1).float().to(device)
                     loss = self.criterion(pred,label_batch)
 
-                    pred = pred.detach().reshape(-1,agent_num,role_num)
+                    pred = pred.to("cpu").detach().reshape(-1,agent_num,role_num)
                     pred = np.array(np.argsort(np.argsort(-pred,axis=2),axis=2)<1)
-                    label_batch = label_batch.detach().reshape(-1,agent_num,role_num)
+                    label_batch = label_batch.to("cpu").detach().reshape(-1,agent_num,role_num)
                     accuracy = np.count_nonzero(np.logical_and(pred,label_batch))/np.count_nonzero(label_batch)
 
-                    self.memory.pushLossAccuracy(batch=LOSSACC(loss.detach(),accuracy),day=i)
+                    self.memory.pushLossAccuracy(batch=LOSSACC(loss.cpu("cpu").detach(),accuracy),day=i)
                     for sth in pred:
                         out.append(sth)
         return out
@@ -125,18 +129,23 @@ class PredictRole():
 
         
         batch = X_T(*zip(*self.memory.sample(BATCH_SIZE)))
-        state_batch = torch.cat(batch.state).view(BATCH_SIZE,1,-1)
-        label_batch = torch.cat(batch.label).view(BATCH_SIZE,1,-1)
+        state_batch = torch.cat(batch.state).view(BATCH_SIZE,1,-1).to(device)
+        label_batch = torch.cat(batch.label).view(BATCH_SIZE,1,-1).to(device)
         self.optimizer.zero_grad()
         pred = self.model(state_batch)
         loss = self.criterion(pred,label_batch)
         loss.backward()
         self.optimizer.step()
 
+        loss = loss.to("cpu")
+        pred = pred.to("cpu")
         pred = pred.detach().reshape(-1,agent_num,role_num)
         pred = np.array(np.argsort(np.argsort(-pred,axis=2),axis=2)<1)
-        label_batch = label_batch.detach().reshape(-1,agent_num,role_num)
+        label_batch = label_batch.to("cpu").detach().reshape(-1,agent_num,role_num)
         accuracy = np.count_nonzero(np.logical_and(pred,label_batch))/np.count_nonzero(label_batch)
 
         self.memory.pushLossAccuracy(batch=LOSSACC(loss.detach(),accuracy),day=0)
                 
+    def get_output(self,state):
+        state = state.to(device)
+        return self.model(state).to("cpu")

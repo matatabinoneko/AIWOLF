@@ -84,8 +84,8 @@ class Agent():
             if np.random.random() < self.epsilon:
                 return self.randomSelect(votable_mask)
 
-
-        vote_list = sorted(enumerate(self.brain.model(state).squeeze().detach().numpy()),key=lambda x:x[1],reverse=True)
+        state = torch.tensor(state).long()
+        vote_list = sorted(enumerate(self.brain.get_output(state).squeeze().detach().numpy()),key=lambda x:x[1],reverse=True)
         for target,_ in vote_list:
             if votable_mask[target] == True:
                 return target
@@ -110,10 +110,6 @@ class Agent():
         action = self.brain.decide_action(state,episode)
 
     def memorize_state(self,state,action,next_state,reward):
-        # state = torch.tensor(state).float()
-        # action = torch.tensor(action).long().view(1,1)
-        # next_state = torch.tensor(next_state).float()
-        # reward = torch.tensor([reward]).float()
         self.brain.memory.push(state,action,next_state,reward)
 
     def updateWinRatio(self,win):
