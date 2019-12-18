@@ -18,7 +18,6 @@ import collections
 from collections import *
 X_T = namedtuple("X_T",("state","label"))
 
-EPSILON = 0.2
 from predict_model import PredictRole
 from brain import Brain
 
@@ -38,6 +37,11 @@ class Agent():
         self.kanning=False
         self.pred_model = PredictRole(n_input,n_hidden,n_output)
         self.brain = Brain(n_input,200,n_output=self.agent_num)
+        
+        if self.train_mode == True:
+            self.epsilon = 0
+        else:
+            self.epsilon = 0.2
 
         if self.kanning==True:
             with open("../AIWolf-ver0.5.6/role.txt","r") as f:
@@ -75,9 +79,9 @@ class Agent():
 
 
         self.brain.model.eval()
-        
+
         if self.train_mode == True:
-            if np.random.random() < EPSILON:
+            if np.random.random() < self.epsilon:
                 return self.randomSelect(votable_mask)
 
 

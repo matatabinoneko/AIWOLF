@@ -170,17 +170,17 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.daily_vector = np.hstack((self.daily_vector,self.identified_list.reshape(self.agent_num,-1),)) #霊媒結果
 
         #発話割合
-        if np.sum(self.talk_cnt) == 0:
-            self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt))
-        else:
-            self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt/np.sum(self.talk_cnt)))
+        # if np.sum(self.talk_cnt) == 0:
+        #     self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt))
+        # else:
+        #     self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt/np.sum(self.talk_cnt)))
         # print(self.daily_vector.shape)
 
     def createSubFeat(self):
         common_feats = np.hstack((
             # self.day,#日にち
             np.where(self.day==1)[0][0]+1,#日にち
-            self.my_agent_id,#自分の番号
+            # self.my_agent_id,#自分の番号
             # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
             self.my_role,#自分の役職
             self.other_role.reshape(-1)#自分の主観情報
@@ -261,7 +261,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
         while(True):
             target = np.random.randint(0,self.game_setting["playerNum"])
             if target != self.base_info["agentIdx"]-1 and self.alive_list[target][self.alive_to_num["alive"]]==1:
-                return target
+                return target + 1
 
 
     def selectAgent(self,target_role):
@@ -330,13 +330,20 @@ class modify_predict_role_data_info(modify_vector_data_info):
         #         if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
         #             return target+1
 
-        est_role_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role]
-        est_role_list = sorted(est_role_list,reverse=True)
-
-        for _,target in est_role_list:
+        # print(self.alive_list)
+        # print(est_role_list)
+        for _,target in sorted([(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role],reverse=True):
             if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
+                # print(target_role,target+1,_)
                 return target + 1
-        return -1 
+        # print("next")
+        for target, _ in sorted(enumerate(est_role_list[:,self.role_to_num[target_role]]),key=lambda x:x[1],reverse=True):
+            if self.alive_list[target][self.alive_to_num["alive"]] == 1 and target != self.base_info['agentIdx']-1:
+                # print(target_role,target+1, _)
+                return target + 1
+        
+
+        return self.randomSelect()
 
 
     def createXPredictData(self):
@@ -796,12 +803,12 @@ class predict_role(predict_role):
             y = self.net(x)
             #お手製シグモイドクロスエントロピー
             # loss = F.sum(F.mean(F.mean(-F.log(F.sigmoid(y))*t-F.log(1-F.sigmoid(y))*(1-t),axis=0),axis=0))
-            # loss = F.sigmoid_cross_entropy(y,t)
+            loss = F.sigmoid_cross_entropy(y,t)
 
             # loss = chainer.Variable(np.array(0).astype(np.float32))
 
             #お手製softmaxcrossentropy
-            loss = F.mean(F.sum(F.sum(-F.log_softmax(F.reshape(y,(-1,self.agent_num,self.role_num)),axis=2).__mul__(t.reshape(-1,self.agent_num,self.role_num)),axis=1),axis=1))
+            # loss = F.mean(F.sum(F.sum(-F.log_softmax(F.reshape(y,(-1,self.agent_num,self.role_num)),axis=2).__mul__(t.reshape(-1,self.agent_num,self.role_num)),axis=1),axis=1))
 
             softmax_y = F.softmax(F.reshape(y,(-1,self.agent_num,self.role_num)),axis=2)
 

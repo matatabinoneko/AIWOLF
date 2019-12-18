@@ -34,11 +34,13 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 
 class Environment():
-    def __init__(self,agent_num=5,train_mode=False,train_times=1000,net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False):
+    def __init__(self,agent_num=5,train_mode=False,train_predict_mode=False,train_dqn_mode=False,train_times=1000,net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False):
         # super(self).__init__()
         self.Time = time.time()
         self.agent_num = agent_num
         self.train_mode = train_mode
+        self.train_predict_mode = train_predict_mode
+        self.train_dqn_mode = train_dqn_mode
         self.train_times = train_times
         self.each_model = each_model
         self.test_train_mode = test_train_mode
@@ -130,7 +132,7 @@ class Environment():
 
         self.t_role_cnt= np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
 
-        self.player = Agent(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_mode=self.train_mode)
+        self.player = Agent(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_mode=self.train_dqn_mode)
 
 
         if self.net_load == True or self.train_mode == False:
@@ -372,7 +374,7 @@ class Environment():
     def vote(self):
         # print("vote")
         self.next_state = self.createXPredictData()
-        if self.state is not None:
+        if self.train_dqn_mode==True and self.state is not None:
             self.player.memorize_state(self.state,torch.tensor(self.action).long().view(1,1),self.next_state,self.reward)
 
         self.request_action = self.encode(self.action_to_num["vote"],len(self.action_to_num))
@@ -759,11 +761,11 @@ class Environment():
             loss,accuracy = self.player.pred_model.memory.getLossAccuracy(i)
             if loss:
                 daily_loss.plot(loss,label="day"+str(i))
-                plt.legend()
+                # plt.legend()
 
             if accuracy:
                 daily_accu.plot(accuracy,label="day"+str(i))
-                plt.legend()
+                # plt.legend()
         win_ratio.plot(self.player.brain.memory.win_memory,label="win_ratio")
         plt.legend()
         # plt.show()
@@ -796,9 +798,10 @@ class Environment():
                 win = False
         
         # print(type(self.state),type(self.action),type(self.next_state),type(self.reward))
-        self.player.memorize_state(self.state,torch.tensor(self.action).long().view(1,1),None,self.reward)
 
-        self.player.update_q_function()
+        if self.train_dqn_mode == True:
+            self.player.memorize_state(self.state,torch.tensor(self.action).long().view(1,1),None,self.reward)
+            self.player.update_q_function()
         self.player.updateWinRatio(win)
 
         self.train_cnt += 1

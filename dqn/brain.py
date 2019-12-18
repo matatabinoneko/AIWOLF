@@ -22,6 +22,10 @@ CAPACITY = 100000
 GAMMA = 0.9
 
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print("use {}".format(device))
+    
+
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -79,7 +83,8 @@ class Brain():
 
         self.memory = ReplayMemory()
 
-        self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output)
+        self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
+
         self.optimizer = optim.Adam(self.model.parameters(),lr=0.0001)
 
 
@@ -101,6 +106,11 @@ class Brain():
             tuple(map(lambda s:s is not None, batch.next_state))
         )
         next_state_values = torch.zeros(BATCH_SIZE)
+
+        non_final_next_states = non_final_next_states.to(device)
+        next_state_values = next_state_values.to(device)
+
+
         next_state_values[non_final_mask] = self.model(non_final_next_states).max(1)[0].detach()
 
         expected_state_action_values = reward_batch + GAMMA * next_state_values
