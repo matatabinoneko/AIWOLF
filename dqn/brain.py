@@ -18,7 +18,7 @@ Transition = namedtuple("Transition",("state","action","next_state","reward"))
 
 
 BATCH_SIZE = 32
-CAPACITY = 100000
+CAPACITY = 2000
 GAMMA = 0.9
 
 
@@ -35,11 +35,14 @@ class ReplayMemory():
         self.memory = []
         self.index = 0
         self.win_memory = []
+        self.max_Q_memory = []
 
     def push(self,state,action,next_state,reward):
         if len(self.memory) < CAPACITY:
             self.memory.append(None)
-        self.memory[self.index] = Transition(state.to(device),action.to(device),next_state.to(device),reward.to(device))
+        if next_state is not None:
+            next_state = next_state.to(device)
+        self.memory[self.index] = Transition(state.to(device),action.to(device),next_state,reward.to(device))
         self.index = (self.index + 1)%CAPACITY
     
     def sample(self,batch_size):
@@ -56,6 +59,8 @@ class ReplayMemory():
             win = (self.win_memory[-1]*size + win)/(size+1)
             self.win_memory.append(win)
 
+    def pushMaxQ(self,q):
+        self.max_Q_memory.append(q)
 
 
 class Model(nn.Module):
@@ -83,6 +88,7 @@ class Brain():
         self.memory = ReplayMemory()
 
         self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
+        print("brain:",self.model,sep='\n')
 
         self.optimizer = optim.Adam(self.model.parameters(),lr=0.0001)
 
@@ -101,6 +107,7 @@ class Brain():
         self.model.eval()
 
         state_action_values = self.model(state_batch).gather(1,action_batch)
+        self.memory.pushMaxQ(torch.mean(state_action_values).detach().item())
         non_final_mask = torch.ByteTensor(
             tuple(map(lambda s:s is not None, batch.next_state))
         )
@@ -109,7 +116,8 @@ class Brain():
         non_final_next_states = non_final_next_states.to(device)
         next_state_values = next_state_values.to(device)
 
-
+        # print(non_final_next_states.shape)
+        # print(next_state_values[non_final_mask].shape)
         next_state_values[non_final_mask] = self.model(non_final_next_states).max(1)[0].detach()
 
         expected_state_action_values = reward_batch + GAMMA * next_state_values
@@ -121,5 +129,7 @@ class Brain():
         loss.backward()
         self.optimizer.step()
 
+
+
     def get_output(self,state):
-        return self.model(state.to(device)).to("cpu")
+        return self.model(state).to("cpu")

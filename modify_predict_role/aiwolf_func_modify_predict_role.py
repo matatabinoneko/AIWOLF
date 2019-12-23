@@ -170,17 +170,17 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.daily_vector = np.hstack((self.daily_vector,self.identified_list.reshape(self.agent_num,-1),)) #霊媒結果
 
         #発話割合
-        # if np.sum(self.talk_cnt) == 0:
-        #     self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt))
-        # else:
-        #     self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt/np.sum(self.talk_cnt)))
+        if np.sum(self.talk_cnt) == 0:
+            self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt))
+        else:
+            self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt/np.sum(self.talk_cnt)))
         # print(self.daily_vector.shape)
 
     def createSubFeat(self):
         common_feats = np.hstack((
             # self.day,#日にち
             np.where(self.day==1)[0][0]+1,#日にち
-            # self.my_agent_id,#自分の番号
+            self.my_agent_id,#自分の番号
             # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
             self.my_role,#自分の役職
             self.other_role.reshape(-1)#自分の主観情報

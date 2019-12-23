@@ -111,6 +111,18 @@ class Environment():
         self.my_agent_id[-1] = 1
         self.other_role = np.zeros((self.agent_num,2),dtype=np.float32)
 
+        #####
+        ## 強化学習用特徴量
+        #####
+
+        self.action_to_num = {"vote":0,"divine":1,"guard":2,"attack":3}
+        self.action_type = [0 for i in range(len(self.action_to_num))]
+        self.state = []
+        self.next_state = []
+        self.reward = [0]
+        self.action = ''
+        self.pre_action = ''
+        self.pred_result = np.zeros((1,self.agent_num*self.role_num)).astype(np.float32)
 
         self.createDailyVector()
         self.createSubFeat()
@@ -133,7 +145,7 @@ class Environment():
 
         self.t_role_cnt= np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
 
-        self.player = Agent(n_input=self.daily_vector_length, n_hidden=500, n_output=self.agent_num*self.role_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_mode=self.train_dqn_mode)
+        self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=500, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length+self.agent_num*self.role_num+len(self.action_to_num),dqn_n_hidden=200,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_mode=self.train_dqn_mode)
 
 
         if self.net_load == True or self.train_mode == False:
@@ -154,16 +166,6 @@ class Environment():
         self.graph_name += "each_model" if self.each_model == True else "one_model"
 
 
-        #####
-        ## 強化学習用特徴量
-        #####
-
-        self.action_to_num = {"vote":0,"divine":1,"guard":2,"attack":3}
-        self.request_action = [0 for i in range(len(self.action_to_num))]
-        self.state = []
-        self.next_state = []
-        self.reward = torch.tensor([0]).float()
-        self.action = ''
 
     def createDailyVector(self):
         #カミングアウトのリスト　占い結果　占い師とカミングアウトした順番　前回の投票宣言　前回の投票先　生死情報　肯定的意見　否定的意見　発話の割合
@@ -265,14 +267,14 @@ class Environment():
         self.disag_esti_list.fill(0)
 
 
-        self.predict_x = [[] for i in range(self.max_day)]
+        self.predict_x = [[] for i in range(self.max_day+1)]
         self.predict_t = [0 for i in range(self.agent_num*self.role_num)]
         # self.player_x = [[]for i in range(self.agent_num)]
         # self.predict_t = [0 for i in range(self.agent_num)]
 
         self.state=None
         self.next_state=None
-        self.reward = torch.tensor([0]).float()
+        self.reward = [0]
         self.action=None
 
     def createXPredictData(self):
@@ -283,6 +285,7 @@ class Environment():
         # print(np.hstack((self.daily_vector.reshape(-1),common_feats, alpha_common_feats)).astype(np.float32).shape)
         return np.hstack((self.daily_vector.reshape(-1),self.sub_feat.reshape(-1))).astype(np.float32).reshape(1,-1)
 
+        
 
     def randomSelect(self,votable_mask):
         while(True):
@@ -292,28 +295,30 @@ class Environment():
 
 
     def selectAgent(self,fase):
-        self.createDailyVector()
         state = self.createXPredictData()
         votable_mask = [self.alive_list[i][self.alive_to_num["alive"]]==1 and i != self.base_info["agentIdx"]-1 for i in range(self.agent_num)]
-        if fase == "vote":
-            return self.player.selectAgent(state=state,votable_mask=votable_mask,agent_num=self.agent_num,role_num=self.role_num,num_to_role=self.num_to_role)
-        else:
+        # return self.randomSelect(votable_mask=votable_mask)
+        target,self.pred_result = self.player.selectAgent(state=state,action_type=np.array([self.action_type]),votable_mask=votable_mask,agent_num=self.agent_num,role_num=self.role_num,num_to_role=self.num_to_role)
+        return target
+        # if fase == "vote":
+        #     return self.player.selectAgent(state=state,votable_mask=votable_mask,agent_num=self.agent_num,role_num=self.role_num,num_to_role=self.num_to_role)
+        # else:
 
-            if self.base_info["myRole"] in ["VILLAGER","SEER","MEDIUM","BODYGUARD"]:
-                target_list = ["WEREWOLF","POSSESSED"]
-            else:
-                target_list = ["SEER","BODYGUARD","MEDIUM","VILLAGER"]
-            for target_role in target_list:
-                est_role_list = self.player.pred_model.get_output(state).reshape(-1).detach().numpy().reshape(self.agent_num,self.role_num)
+        #     if self.base_info["myRole"] in ["VILLAGER","SEER","MEDIUM","BODYGUARD"]:
+        #         target_list = ["WEREWOLF","POSSESSED"]
+        #     else:
+        #         target_list = ["SEER","BODYGUARD","MEDIUM","VILLAGER"]
+        #     for target_role in target_list:
+        #         est_role_list = self.player.get_predict_output(state).reshape(self.agent_num,self.role_num)
 
-                est_role_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role]
-                est_role_list = sorted(est_role_list,reverse=True)
+        #         est_role_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role]
+        #         est_role_list = sorted(est_role_list,reverse=True)
 
-                for _,target in est_role_list:
-                    if votable_mask[target]==True:
-                        return target
+        #         for _,target in est_role_list:
+        #             if votable_mask[target]==True:
+        #                 return target
 
-            return self.randomSelect(votable_mask)
+        #     return self.randomSelect(votable_mask)
 
 
     def talk(self):
@@ -372,15 +377,22 @@ class Environment():
         # print("whisper")
         return cb.over()
 
+    def createDqnState(self,state,action_type,pred_result):
+        action_type = np.array([action_type])
+        return np.hstack((state,pred_result,action_type)).astype(np.float32)
+
     def vote(self):
         # print("vote")
-        self.next_state = self.createXPredictData()
-        if self.train_dqn_mode==True and self.state is not None:
-            self.player.memorize_state(torch.tensor(self.state).float(),torch.tensor(self.action).float().view(1,1),torch.tensor(self.next_state),torch.tensor(self.reward).float())
+        # next_action = self.selectAgent("vote")
+        # self.next_state = self.createDqnState(state=self.createXPredictData(),action_type=self.action_type,pred_result=self.pred_result)
+        # if self.train_dqn_mode==True and self.state is not None:
+        #     self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=self.next_state,reward=self.reward)
 
-        self.request_action = self.encode(self.action_to_num["vote"],len(self.action_to_num))
-        self.state = self.createXPredictData()
+        self.state = self.createDqnState(state=self.createXPredictData(),action_type=self.action_type,pred_result=self.pred_result)
+        self.pre_action = self.action
+        # self.action = next_action
         self.action = self.selectAgent("vote")
+        self.action_type = self.encode(self.action_to_num["vote"],len(self.action_to_num))
         return self.action + 1
         # if self.base_info["myRole"] in self.werewolf_list:
         #     for target_role in ["SEER","VILLAGER","POSSESSED"]:
@@ -647,7 +659,8 @@ class Environment():
         
         for i in range(1,len(self.predict_x)):
             if len(self.predict_x[i]) != 0:
-                self.predict_net[i].addVector(self.predict_x[i],self.predict_t)
+                for j in range(len(self.predict_x[i])):
+                    self.predict_net[i].addVector([self.predict_x[i][j]],self.predict_t)
         # if self.predict_train == True:
         #     for i in range(len(self.player_x)):
         #         for j in range(len(self.player_x[i])):
@@ -656,7 +669,8 @@ class Environment():
     def addVectorToOneModel(self):
         for i in range(1,len(self.predict_x)):
             if len(self.predict_x[i]) != 0:
-                self.player.memorize_pred_label(torch.tensor(self.predict_x[i],dtype=torch.float32),torch.tensor([self.predict_t],dtype=torch.float32))
+                for j in range(len(self.predict_x[i])):
+                    self.player.memorize_pred_label([self.predict_x[i][j]],[self.predict_t])
         # if self.predict_train == True:
         #     for i in range(len(self.player_x)):
         #         for j in range(len(self.player_x[i])):
@@ -697,6 +711,7 @@ class Environment():
             self.seer_co_cnt += 1
 
 
+
         # self.updateTalk()
         if self.fake_role != '' and self.do_fake_report== False:
             self.do_fake_report = True
@@ -704,6 +719,10 @@ class Environment():
 
         if request == 'DAILY_INITIALIZE' and 2 <= base_info["day"]:
             self.updateVote_declare()
+
+            self.next_state = self.createDqnState(state=self.createXPredictData(),action_type=self.action_type,pred_result=self.pred_result)
+            if self.train_dqn_mode==True and self.state is not None:
+                self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=self.next_state,reward=self.reward)
 
         elif request == "DAILY_FINISH" and 1 <= base_info["day"]:
             #0:自分が人間判定された数 1:自分が人狼判定された数 2:占い師の名乗り出た順番 3:報告した人間の数 4:報告した人狼の数 5:発言と投票先が変わった数．6:生死(#alive:0 attacked:1 execute:-1)　7~11:肯定的意見の数　12~16:否定的意見の数        
@@ -768,6 +787,9 @@ class Environment():
                 daily_accu.plot(accuracy,label="day"+str(i))
                 # plt.legend()
         win_ratio.plot(self.player.brain.memory.win_memory,label="win_ratio")
+        max_Q_mean = fig.add_subplot(2,2,4)
+        plt.title("max_Q_mean")
+        max_Q_mean.plot(self.player.brain.memory.max_Q_memory,label="max_Q_mean")
         plt.legend()
         # plt.show()
         os.makedirs("graph_folder", exist_ok=True)
@@ -792,16 +814,16 @@ class Environment():
         with open("../AIWolf-ver0.5.6/winner.txt",'r') as f:
             winner = f.readlines()
             if winner[self.base_info["agentIdx"]-1] == winner[-1]:
-                self.reward = torch.tensor([1]).float()
+                self.reward = [1]
                 win = True
             else:
-                self.reward = torch.tensor([0]).float()
+                self.reward = [0]
                 win = False
         
         # print(type(self.state),type(self.action),type(self.next_state),type(self.reward))
 
         if self.train_dqn_mode == True:
-            self.player.memorize_state(torch.tensor(self.state).float(),torch.tensor(self.action).long().view(1,1),None,torch.tensor(self.reward).float())
+            self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=None,reward=self.reward)
             self.player.update_q_function()
         self.player.updateWinRatio(win)
 
@@ -810,7 +832,7 @@ class Environment():
 
         if self.train_cnt%(self.train_times//10) == 0:
             sec = round(time.time()-self.Time)
-            print("train:{:<10}time is {:<2}hour {:<2}minutes {:<2}sec".format(self.train_cnt,sec//3600,(sec%3600)//60,(sec%60)))
+            print("train:{:<10}time is {:<2}hour {:<2}minutes {:<2}sec  max_q_mean is {:<5.2}".format(self.train_cnt,sec//3600,(sec%3600)//60,(sec%60),self.player.brain.memory.max_Q_memory[-1]))
             if self.train_mode == True:
                 if self.each_model == True:
                     self.save_each_model()

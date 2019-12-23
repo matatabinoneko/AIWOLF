@@ -638,17 +638,22 @@ class data_info():
         if self.player_train == True:
             for i in range(len(self.player_x)):
                 for j in range(len(self.player_x[i])):
+                    
                     self.player_net[i].addVector(self.player_x[i][j],[self.player_t[j]])
 
     def addVectorToOneModel(self):
         if self.daily_train == True:
             for i in range(1,len(self.daily_x)):
                 if 0 < len(self.daily_x[i]):
-                    self.daily_net[0].addVector(self.daily_x[i],self.daily_t)
+                    for j in range(len(self.daily_x[i])):
+                    # print(np.array(self.daily_x[i]).shape,np.array(self.player_t).shape)
+                        self.daily_net[0].addVector([self.daily_x[i][j]],self.daily_t)
         if self.player_train == True:
             for i in range(len(self.player_x)):
                 for j in range(len(self.player_x[i])):
-                    self.player_net[0].addVector([self.player_x[i][j]],[self.player_t[j]])
+                    # if len(self.player_x[i]) != len(self.player_t):
+                    #     self.player_t = np.tile((self.player_t),(len(self.player_x[i])//len(self.player_t),1)).reshape(-1).tolist()
+                    self.player_net[0].addVector([self.player_x[i][j]],[self.player_t[j%len(self.player_t)]])
 
     def update(self, base_info, diff_data, request):
         self.base_info = base_info
@@ -883,6 +888,8 @@ class Memory():
     def choice(self,n):
         # print(np.array(self.x_memory).shape,n)
         choice = np.random.choice(len(self.x_memory),n)
+        # print(choice,len(self.x_memory))
+        # print(len(self.t_memory))
         x = np.array(self.x_memory)[choice,:].astype(np.float32)
         t = np.array(self.t_memory)[choice,:].astype(np.int32)
         return x,t

@@ -94,7 +94,7 @@ class PredictRole():
         self.memory = Memory()
 
         self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
-        print(self.model)
+        print("pred model:",self.model,sep='\n')
         self.criterion = nn.BCELoss()
         self.optimizer = optim.Adam(self.model.parameters(),lr=0.001)
 
@@ -115,7 +115,7 @@ class PredictRole():
                     label_batch = label_batch.to("cpu").detach().reshape(-1,agent_num,role_num)
                     accuracy = np.count_nonzero(np.logical_and(pred,label_batch))/np.count_nonzero(label_batch)
 
-                    self.memory.pushLossAccuracy(batch=LOSSACC(loss.cpu("cpu").detach(),accuracy),day=i)
+                    self.memory.pushLossAccuracy(batch=LOSSACC(loss.to("cpu").detach(),accuracy),day=i)
                     for sth in pred:
                         out.append(sth)
         return out
@@ -147,5 +147,4 @@ class PredictRole():
         self.memory.pushLossAccuracy(batch=LOSSACC(loss.detach(),accuracy),day=0)
                 
     def get_output(self,state):
-        state = state.to(device)
         return self.model(state).to("cpu")

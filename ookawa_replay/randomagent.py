@@ -58,13 +58,13 @@ class SampleAgent(object):
         return self.randomSelect()
     
     def attack(self):
-        return self.base_info['agentIdx']
+        return self.randomSelect()
     
     def divine(self):
-        return self.base_info['agentIdx']
+        return self.randomSelect()
     
     def guard(self):
-        return self.base_info['agentIdx']
+        return self.randomSelect()
     
     def finish(self):
         return None

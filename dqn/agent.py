@@ -29,14 +29,14 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 
 class Agent():
-    def __init__(self,n_input, n_hidden, n_output, agent_num,role_num,t_role_cnt,train_mode=False):
+    def __init__(self,pred_n_input, pred_n_hidden, pred_n_output,dqn_n_input, dqn_n_hidden, dqn_n_output, agent_num,role_num,t_role_cnt,train_mode=False):
         self.agent_num = agent_num
         self.role_num = role_num
         self.train_mode = train_mode
         self.answer = []
         self.kanning=False
-        self.pred_model = PredictRole(n_input,n_hidden,n_output)
-        self.brain = Brain(n_input,200,n_output=self.agent_num)
+        self.pred_model = PredictRole(pred_n_input,pred_n_hidden,pred_n_output)
+        self.brain = Brain(n_input=dqn_n_input,n_hidden=dqn_n_hidden,n_output=dqn_n_output)
         
         if self.train_mode == True:
             self.epsilon = 0
@@ -54,10 +54,15 @@ class Agent():
         self.pred_model.train(agent_num=self.agent_num,role_num=self.role_num)
 
     def eval_pred_model(self,state,label):
+        # print(state)
+        # state = torch.tensor(state).float()
+        # label = torch.tensor(label).float()
         pred = self.pred_model.eval(state=state,label=label,agent_num=self.agent_num,role_num=self.role_num)
         return pred
 
     def memorize_pred_label(self,state,label):
+        state = torch.tensor(state).float()
+        label = torch.tensor(label).float()
         self.pred_model.memory.push(state,label)
 
     def randomSelect(self,votable_mask):
@@ -66,8 +71,10 @@ class Agent():
             if votable_mask[target]==True:
                 return target
 
+    def createDqnState(self,state,pred_result,action_type):
+        return torch.cat((torch.FloatTensor(state),torch.FloatTensor(pred_result),torch.FloatTensor(action_type)),dim=1).float()
 
-    def selectAgent(self,state,votable_mask,agent_num,role_num,num_to_role):
+    def selectAgent(self,state,action_type,votable_mask,agent_num,role_num,num_to_role):
         #返り値は１始まり
         # return self.brain.selectAgent(state,episode=0).argmax(0).item() + 1
 
@@ -75,21 +82,30 @@ class Agent():
             for target,role in enumerate(self.answer):
                 if role == target_role and votable_mask[target]:
                     return target + 1
-            return self.randomSelect(votable_mask)
+            return self.randomSelect(votable_mask),None
 
 
         self.brain.model.eval()
+        with torch.no_grad():
+            state = torch.tensor(state).float()
+            action_type = torch.tensor(action_type).float()
 
-        if self.train_mode == True:
-            if np.random.random() < self.epsilon:
-                return self.randomSelect(votable_mask)
-
-        state = torch.tensor(state).long()
-        vote_list = sorted(enumerate(self.brain.get_output(state).squeeze().detach().numpy()),key=lambda x:x[1],reverse=True)
-        for target,_ in vote_list:
-            if votable_mask[target] == True:
-                return target
-        return randomSelect(votable_mask)
+            pred_result = self.pred_model.get_output(state)
+            # print(type(pred_result))
+            
+            if self.train_mode == True:
+                if np.random.random() < self.epsilon:
+                    # print("random",pred_result.detach().numpy())
+                    return self.randomSelect(votable_mask),pred_result.detach().numpy()
+            
+            state = self.createDqnState(state=state,pred_result=pred_result,action_type=action_type)
+            vote_list = sorted(enumerate(self.brain.get_output(state).squeeze().detach().numpy()),key=lambda x:x[1],reverse=True)
+            for target,_ in vote_list:
+                if votable_mask[target] == True:
+                    # print("target",pred_result.detach().numpy())
+                    return target,pred_result.detach().numpy()
+            # print("random",pred_result.detach().numpy())
+            return randomSelect(votable_mask),pred_result.detach().numpy()
 
 
         # est_role_list = self.pred_model.model(state).reshape(-1).detach().numpy().reshape(agent_num,role_num)
@@ -107,11 +123,22 @@ class Agent():
         self.brain.replay()
 
     def get_action(self,state,episode):
+        state  =torch.tensor(state).float()
         action = self.brain.decide_action(state,episode)
 
     def memorize_state(self,state,action,next_state,reward):
+        state = torch.FloatTensor(state)
+        # state = self.createDqnState(state=state,pred_result=pred_result,action_type=torch.FloatTensor(action_type))
+        action = torch.tensor(action).long()
+        if next_state is not None:
+            next_state = torch.tensor(next_state).float()
+        reward = torch.tensor(reward).float()
         self.brain.memory.push(state,action,next_state,reward)
 
     def updateWinRatio(self,win):
         1 if win else 0
         self.brain.memory.pushWinRatio(win)
+
+    def get_predict_output(self,state):
+        state = torch.tensor(state).float()
+        return self.pred_model.get_output(state).detach().numpy()
