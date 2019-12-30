@@ -23,7 +23,16 @@ class SampleAgent(object):
     def __init__(self, agent_name):
         ## myname ##
         self.myname = agent_name
-        self.w_data = Environment(agent_num=10,train_mode=True,train_predict_mode=False,train_dqn_mode=True,train_times=10000,net_load=False,test_train_mode=False)
+        self.w_data = Environment(
+                                agent_num=10,
+                                train_predict_mode=False,
+                                train_dqn_mode=False,
+                                train_divine_mode=False,
+                                predict_net_load=True,
+                                dqn_net_load=True,
+                                divine_net_load=True,
+                                train_times=10000,
+                                )
 
 
 

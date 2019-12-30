@@ -20,6 +20,7 @@ X_T = namedtuple("X_T",("state","label"))
 
 from predict_model import PredictRole
 from brain import Brain
+from divine_model import DivineModel
 
 
 import sys
@@ -35,8 +36,10 @@ class Agent():
         self.train_mode = train_mode
         self.answer = []
         self.kanning=False
-        self.pred_model = PredictRole(pred_n_input,pred_n_hidden,pred_n_output)
+        self.pred_model = PredictRole(pred_n_input,pred_n_hidden,agent_num,role_num)
         self.brain = Brain(n_input=dqn_n_input,n_hidden=dqn_n_hidden,n_output=dqn_n_output)
+        self.divine_model = DivineModel(n_input=dqn_n_input,n_hidden=dqn_n_hidden,n_output=agent_num*2)
+        self.last_pred_result = None
         
         if self.train_mode == True:
             self.epsilon = 0
@@ -71,24 +74,26 @@ class Agent():
             if votable_mask[target]==True:
                 return target
 
-    def createDqnState(self,state,pred_result,action_type):
-        return torch.cat((torch.FloatTensor(state),torch.FloatTensor(pred_result),torch.FloatTensor(action_type)),dim=1).float()
+    def createDqnState(self,state):
+        pred_result = self.get_predict_output(state)
+        # return torch.cat((torch.FloatTensor(state),torch.FloatTensor(pred_result),torch.FloatTensor(action_type)),dim=1).float()
+        return torch.cat((torch.FloatTensor(state),torch.FloatTensor(pred_result)),dim=1).float()
 
-    def selectAgent(self,state,action_type,votable_mask,agent_num,role_num,num_to_role):
+    def selectAgent(self,state,votable_mask,agent_num,role_num,num_to_role):
         #返り値は１始まり
         # return self.brain.selectAgent(state,episode=0).argmax(0).item() + 1
 
-        if self.kanning == True:
-            for target,role in enumerate(self.answer):
-                if role == target_role and votable_mask[target]:
-                    return target + 1
-            return self.randomSelect(votable_mask),None
+        # if self.kanning == True:
+        #     for target,role in enumerate(self.answer):
+        #         if role == target_role and votable_mask[target]:
+        #             return target + 1
+        #     return self.randomSelect(votable_mask),None
 
 
         self.brain.model.eval()
         with torch.no_grad():
             state = torch.tensor(state).float()
-            action_type = torch.tensor(action_type).float()
+            # action_type = torch.tensor(action_type).float()
 
             pred_result = self.pred_model.get_output(state)
             # print(type(pred_result))
@@ -96,16 +101,16 @@ class Agent():
             if self.train_mode == True:
                 if np.random.random() < self.epsilon:
                     # print("random",pred_result.detach().numpy())
-                    return self.randomSelect(votable_mask),pred_result.detach().numpy()
+                    return self.randomSelect(votable_mask)
             
-            state = self.createDqnState(state=state,pred_result=pred_result,action_type=action_type)
+            state = self.createDqnState(state=state)
             vote_list = sorted(enumerate(self.brain.get_output(state).squeeze().detach().numpy()),key=lambda x:x[1],reverse=True)
             for target,_ in vote_list:
                 if votable_mask[target] == True:
                     # print("target",pred_result.detach().numpy())
-                    return target,pred_result.detach().numpy()
+                    return target
             # print("random",pred_result.detach().numpy())
-            return randomSelect(votable_mask),pred_result.detach().numpy()
+            return randomSelect(votable_mask)
 
 
         # est_role_list = self.pred_model.model(state).reshape(-1).detach().numpy().reshape(agent_num,role_num)
@@ -121,24 +126,74 @@ class Agent():
 
     def update_q_function(self):
         self.brain.replay()
+    
+    def update_divine_model(self):
+        self.divine_model.replay()
 
-    def get_action(self,state,episode):
-        state  =torch.tensor(state).float()
-        action = self.brain.decide_action(state,episode)
+    # def get_action(self,state,episode):
+    #     state  =torch.tensor(state).float()
+    #     action = self.brain.decide_action(state,episode)
 
     def memorize_state(self,state,action,next_state,reward):
         state = torch.FloatTensor(state)
-        # state = self.createDqnState(state=state,pred_result=pred_result,action_type=torch.FloatTensor(action_type))
+        state = self.createDqnState(state=state)
         action = torch.tensor(action).long()
         if next_state is not None:
-            next_state = torch.tensor(next_state).float()
+            next_state = torch.FloatTensor(next_state)
+            next_state = self.createDqnState(state=next_state)
         reward = torch.tensor(reward).float()
         self.brain.memory.push(state,action,next_state,reward)
 
+    def memorize_divine_state(self,state,action,next_state,reward):
+        state = torch.FloatTensor(state)
+        state = self.createDqnState(state=state)
+        action = torch.tensor(action).long()
+        if next_state is not None:
+            next_state = torch.FloatTensor(next_state)
+            next_state = self.createDqnState(state=next_state)
+        reward = torch.tensor(reward).float()
+        self.divine_model.memory.push(state,action,next_state,reward)
+
+
     def updateWinRatio(self,win):
-        1 if win else 0
+        win = 1 if win else 0
         self.brain.memory.pushWinRatio(win)
 
     def get_predict_output(self,state):
-        state = torch.tensor(state).float()
-        return self.pred_model.get_output(state).detach().numpy()
+        self.last_pred_result = self.pred_model.get_output(state).detach().numpy()
+        return self.last_pred_result
+
+
+    def randomDivineSelect(self,divinable_mask):
+        while(True):
+            target = np.random.randint(0,len(divinable_mask))
+            if divinable_mask[target]==True:
+                role = np.random.randint(0,2)
+                return target*2 + role
+
+    def selectDivineAgent(self,state,divinable_mask):
+        if state is None:
+            return self.randomDivineSelect(divinable_mask)
+        self.divine_model.model.eval()
+        with torch.no_grad():
+            
+            if self.train_mode == True:
+                if np.random.random() < self.epsilon:
+                    return self.randomDivineSelect(divinable_mask)
+
+            state = torch.tensor(state).float()
+            
+            pred_result = self.pred_model.get_output(state)
+            # print(type(pred_result))
+            
+            if self.train_mode == True:
+                if np.random.random() < self.epsilon:
+                    # print("random",pred_result.detach().numpy())
+                    return self.randomDivineSelect(divinable_mask)
+            
+            state = self.createDqnState(state=state)
+            divine_list = sorted(enumerate(self.divine_model.get_output(state).squeeze().detach().numpy()),key=lambda x:x[1],reverse=True)
+            for target,_ in divine_list:
+                if divinable_mask[target//2] == True:
+                    return target
+            return randomDivineSelect(mask)

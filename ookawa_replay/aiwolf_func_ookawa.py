@@ -534,6 +534,7 @@ class data_info():
         tmp = 0
         exist_werewolf = False
         for agent,y_role in enumerate(y):
+            agent = agent%self.agent_num
             if self.num_to_role[y_role] == "WEREWOLF":
                 exist_werewolf = True
                 if self.alive_list[agent] == 0:
@@ -580,8 +581,9 @@ class data_info():
             # self.daily_net[0].memory.addLossAccuracy(loss,accuracy)
             for i in range(1,len(self.daily_x)):
                 if 0 < len(self.daily_x[i]):
-                    loss, accuracy = self.daily_net[0].eval(np.array(self.daily_x[i]).reshape(1,-1).astype(np.float32), np.array(self.daily_t).reshape(1,-1).astype(np.int32))
-                    self.daily_net[i].memory.addLossAccuracy(loss,accuracy)
+                    for j in range(len(self.daily_x[i])):
+                        loss, accuracy = self.daily_net[0].eval(np.array([self.daily_x[i][j]]).reshape(1,-1).astype(np.float32), np.array(self.daily_t).reshape(1,-1).astype(np.int32))
+                        self.daily_net[i].memory.addLossAccuracy(loss,accuracy)
 
 
     def player_model_train(self):
@@ -602,7 +604,9 @@ class data_info():
         else:
             for i in range(len(self.player_x)):
                 if 0 < len(self.player_x[i]):
-                    loss, accuracy, player_y = self.player_net[0].eval(np.array(self.player_x[i]).astype(np.float32), np.array(self.player_t).astype(np.int32))
+                    # print(np.array(self.player_x[i]).shape)
+                    # print(np.tile(self.player_t,(1,len(self.player_x[i])//len(self.player_t))).reshape(-1).shape)
+                    loss, accuracy, player_y = self.player_net[0].eval(np.array(self.player_x[i]).astype(np.float32), np.tile(self.player_t,(1,len(self.player_x[i])//len(self.player_t))).reshape(-1).astype(np.int32))
                     self.update_predict_result(player_y, np.array(self.player_t).astype(np.int32))
                     self.player_net[i].memory.addLossAccuracy(loss,accuracy)
 
@@ -758,6 +762,8 @@ class data_info():
 
     def vote(self):
         # print("vote")
+
+        # print(self.divined_list)
         if self.base_info["myRole"] in self.werewolf_list:
             for target_role in ["SEER","VILLAGER","POSSESSED"]:
                 target = self.selectAgent(target_role)

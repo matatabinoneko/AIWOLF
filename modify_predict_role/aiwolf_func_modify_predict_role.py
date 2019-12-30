@@ -496,6 +496,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
         tmp = 0
         exist_werewolf = False
         for agent,y_role in enumerate(y):
+            agent = agent%self.agent_num
             if self.num_to_role[y_role] == "WEREWOLF":
                 exist_werewolf = True
                 if self.alive_list[agent][self.alive_to_num.get("alive")] == 1:

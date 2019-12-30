@@ -38,21 +38,18 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 
 class Environment():
-    def __init__(self,agent_num=5,train_mode=False,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False,train_times=1000,predict_net_load=False,dqn_net_load=False,divine_net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False):
+    def __init__(self,agent_num=5,train_mode=False,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False,train_times=1000,net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False):
         # super(self).__init__()
         self.Time = time.time()
         self.agent_num = agent_num
         self.train_mode = train_mode
         self.train_predict_mode = train_predict_mode
         self.train_dqn_mode = train_dqn_mode
-        self.train_divine_mode = train_divine_mode
         self.train_times = train_times
         self.each_model = each_model
         self.test_train_mode = test_train_mode
         self.epsilon = epsilon
-        self.predict_net_load = predict_net_load
-        self.dqn_net_load = dqn_net_load
-        self.divine_net_load = divine_net_load
+        self.net_load = net_load
         self.train_cnt = 1
         self.kanning = kanning
 
@@ -117,19 +114,22 @@ class Environment():
         self.my_agent_id[-1] = 1
         self.other_role = np.zeros((self.agent_num,2),dtype=np.float32)
 
-        ####################################
+        #####
         ## 強化学習用特徴量
-        #################################
+        #####
 
         self.action_to_num = {"vote":0,"divine":1,"guard":2,"attack":3}
         self.action_type = [0 for i in range(len(self.action_to_num))]
         self.state = []
         self.next_state = []
         self.reward = [0]
-        self.vote_action = None
+        self.action = ''
+        self.pre_action = ''
         self.pred_result = np.zeros((1,self.agent_num*self.role_num)).astype(np.float32)
 
-        self.divine_action = None
+        self.divine_state = []
+        self.divine_next_state = []
+        self.divine_action = ''
 
         self.createDailyVector()
         self.createSubFeat()
@@ -155,21 +155,17 @@ class Environment():
         self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=500, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length+self.agent_num*self.role_num,dqn_n_hidden=200,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_mode=self.train_dqn_mode)
 
 
-        if self.predict_net_load == True or self.train_predict_mode == False:
+        if self.net_load == True or self.train_predict_mode == False:
             if self.each_model == True:
                 for i in range(len(self.predict_net)):
                     serializers.load_npz('./predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_10000.net', self.predict_net[i].net)
             else:
                 self.player.pred_model.model = torch.load('./predict_model/agent'+str(self.agent_num)+'/one_model/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_train_10000.net')
-        if self.dqn_net_load == True or self.train_dqn_mode == False:
+        if self.net_load == True or self.train_dqn_mode == False:
             path = "./dqn_model/agent"+str(self.agent_num)+'/'
             file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
             self.player.brain.model = torch.load(path+file_name)
-        if self.divine_net_load == True or self.train_dqn_mode == False:
-            path = "./divine_model/agent"+str(self.agent_num)+'/'
-            file_name = 'divine_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
-            self.player.divine_model.model = torch.load(path+file_name)
-
+            print("ok")
 
 
         self.graph_name = 'dqn_'
@@ -288,14 +284,10 @@ class Environment():
         self.state=None
         self.next_state=None
         self.reward = [0]
+        self.action=None
         self.divine_state = None
         self.divine_next_state = None
         self.divine_action = None
-        self.vote_action = None
-        self.pred_result = np.zeros((1,self.agent_num*self.role_num)).astype(np.float32)
-        self.divine_action = None
-        # self.divine_list = [False for i in range(self.agent_num)]
-
 
     def createXPredictData(self):
         # common_feats = np.hstack((self.base_info["day"],self.my_agent_id,self.my_role,))
@@ -308,9 +300,6 @@ class Environment():
         
 
     def randomSelect(self,votable_mask):
-        if len(np.where(votable_mask==True)[0]):
-            print("infinity roop")
-            return self.base_info["agentIdx"]
         while(True):
             target = np.random.randint(0,len(votable_mask))
             if votable_mask[target]==True:
@@ -322,12 +311,9 @@ class Environment():
         state = self.createXPredictData()
         votable_mask = [self.alive_list[i][self.alive_to_num["alive"]]==1 and i != self.base_info["agentIdx"]-1 for i in range(self.agent_num)]
 
-        if state is None:
-            return self.randomSelect(votable_mask)
-
         if fase == "vote":
             # return self.randomSelect(votable_mask=votable_mask)
-            target = self.player.selectAgent(state=state,votable_mask=votable_mask,agent_num=self.agent_num,role_num=self.role_num,num_to_role=self.num_to_role)
+            target,self.pred_result = self.player.selectAgent(state=state,action_type=np.array([self.action_type]),votable_mask=votable_mask,agent_num=self.agent_num,role_num=self.role_num,num_to_role=self.num_to_role)
             return target
         else:
 
@@ -336,15 +322,16 @@ class Environment():
             else:
                 target_list = ["SEER","BODYGUARD","MEDIUM","VILLAGER"]
             for target_role in target_list:
-                est_role_list = self.player.get_predict_output(torch.tensor(state).float()).reshape(self.agent_num,self.role_num)
+                est_role_list = self.player.get_predict_output(state).reshape(self.agent_num,self.role_num)
+
                 est_role_list = [(est_role_list[agent,role],agent) for agent,role in enumerate(np.argmax(est_role_list,axis=1)) if self.num_to_role[role] == target_role]
                 est_role_list = sorted(est_role_list,reverse=True)
 
                 for _,target in est_role_list:
                     if votable_mask[target]==True:
                         return target
-            
-        return self.randomSelect(votable_mask)
+
+            return self.randomSelect(votable_mask)
 
 
     def talk(self):
@@ -400,7 +387,7 @@ class Environment():
 
 
     def whisper(self):
-        # print("whisper")v
+        # print("whisper")
         return cb.over()
 
     def createDqnState(self,state,pred_result):
@@ -415,11 +402,12 @@ class Environment():
         # if self.train_dqn_mode==True and self.state is not None:
         #     self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=self.next_state,reward=self.reward)
 
-        # self.state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
-
-        self.vote_action = self.selectAgent("vote")
+        self.state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
+        self.pre_action = self.action
+        # self.action = next_action
+        self.action = self.selectAgent("vote")
         # self.action_type = self.encode(self.action_to_num["vote"],len(self.action_to_num))
-        return self.vote_action + 1
+        return self.action + 1
         # if self.base_info["myRole"] in self.werewolf_list:
         #     for target_role in ["SEER","VILLAGER","POSSESSED"]:
         #         target = self.selectAgent()
@@ -682,12 +670,6 @@ class Environment():
         file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
         torch.save(self.player.brain.model,path+file_name)
 
-    def save_divine_model(self):
-        path = "./net_folder/divine_model/agent"+str(self.agent_num)+'/'
-        os.makedirs(path,exist_ok=True)
-        file_name = 'divine_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
-        torch.save(self.player.divine_model.model,path+file_name)
-
     def addVectorToEachModel(self):
         
         for i in range(1,len(self.predict_x)):
@@ -751,9 +733,9 @@ class Environment():
             self.getFakeResult()
 
         if request == 'DAILY_INITIALIZE' and 2 <= base_info["day"]:
-            # self.next_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
-            # if self.train_dqn_mode==True and self.state is not None:
-            #     self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=self.next_state,reward=self.reward)
+            self.next_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
+            if self.train_dqn_mode==True and self.state is not None:
+                self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=self.next_state,reward=self.reward)
 
             self.updateVote_declare()
 
@@ -763,16 +745,11 @@ class Environment():
             self.updateVector()
 
             if self.base_info['myRole'] == 'POSSESSED':
-                if self.train_divine_mode==True and self.state is not None:
-                    self.player.memorize_divine_state(state=self.state,action=np.array(self.divine_action).reshape(1,1),next_state=self.next_state,reward=self.reward)
+                self.next_divine_state = self.createXPredictData()
+                # print(self.divine_state)
+                self.player.memorize_divine_state(state=self.divine_state,action=np.array(self.divine_action).reshape(1,1),next_state=self.next_divine_state,reward=self.reward)
                 self.do_fake_report = False
 
-            # self.next_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
-            self.next_state = self.createXPredictData()
-            if self.train_dqn_mode==True and self.state is not None:
-                self.player.memorize_state(state=self.state,action=np.array(self.vote_action).reshape(1,1),next_state=self.next_state,reward=self.reward)
-
-            self.state = self.next_state
 
     def display_game_result(self):
         sum_role_pred = 0
@@ -806,7 +783,7 @@ class Environment():
         # print(self.trust_my_skill,self.not_trust_my_skill)
         if 0 < (self.trust_my_skill+self.not_trust_my_skill):
             print("trust my skill rate is {:.2f}".format(self.trust_my_skill/(self.trust_my_skill+self.not_trust_my_skill)))
-        print("win_ratio is {:.2f}".format(np.mean(self.player.brain.memory.win_memory)))
+        print("win_ratio is {;.2f}".format(np.mean(self.player.brain.memory.win_memory)))
 
     def plot_accu_loss(self):
         fig = plt.figure(figsize=(12.0,8.0))
@@ -841,7 +818,7 @@ class Environment():
 
 
     def finish(self):
-        if self.train_predict_mode == True:
+        if self.train_mode == True or (self.train_mode == False and self.test_train_mode == True):
             if self.each_model == True:
                 self.addVectorToEachModel()
             else:
@@ -888,17 +865,14 @@ class Environment():
         # print(type(self.state),type(self.action),type(self.next_state),type(self.reward))
 
         if self.train_dqn_mode == True:
-            # print(self.vote_action)
-            self.player.memorize_state(state=self.state,action=np.array(self.vote_action).reshape(1,1),next_state=None,reward=self.reward)
+            self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=None,reward=self.reward)
             self.player.update_q_function()
         self.player.updateWinRatio(win)
-        # writer.add_scalar('data/win_ratio',self.player.brain.memory.win_memory[-1],len(self.player.brain.memory.win_memory))
+        writer.add_scalar('data/win_ratio',self.player.brain.memory.win_memory[-1],len(self.player.brain.memory.win_memory))
 
-        if self.base_info["myRole"] == "POSSESSED":
-            if self.train_divine_mode == True:
-                # print(self.divine_action)
-                self.player.memorize_divine_state(state=self.state,action=np.array(self.divine_action).reshape(1,1),next_state=None,reward=self.reward)
-                self.player.update_divine_model()
+        if self.train_divine_model == True:
+            self.player.memorize_divine_state(state=self.divine_state,action=np.array(self.divine_action).reshape(1,1),next_state=None,reward=self.reward)
+            self.player.update_divine_model()
 
         self.train_cnt += 1
 
@@ -906,22 +880,15 @@ class Environment():
         if self.train_cnt%(self.train_times//10) == 0:
             sec = round(time.time()-self.Time)
             print("train:{:<10}time is {:<2}hour {:<2}minutes {:<2}sec".format(self.train_cnt,sec//3600,(sec%3600)//60,(sec%60)))
-            # if self.train_mode == True:
-            #     if self.each_model == True:
-            #         self.save_each_model()
-            #     else:
-            #         self.save_one_model()
-            #         self.save_dqn_model()
-            #         self.save_divine_model()
-            if self.train_predict_mode == True:
-                self.save_one_model()
-            if self.train_dqn_mode == True:
-                self.save_dqn_model()
-            if self.train_divine_mode == True:
-                self.save_divine_model()
+            if self.train_mode == True:
+                if self.each_model == True:
+                    self.save_each_model()
+                else:
+                    self.save_one_model()
+                    self.save_dqn_model()
 
         if(self.train_cnt == self.train_times):
-            if self.train_predict_mode == False:
+            if self.train_mode == False:
                 self.display_game_result()
             # else:
             #     self.save_one_model()
@@ -997,15 +964,41 @@ class Environment():
 
         if self.fake_role == 'SEER':
             self.not_reported = True
-            # self.divine_state = self.createXPredictData()
+            self.divine_state = self.createXPredictData()
             mask = self.createMask()
-            self.divine_action = self.player.selectDivineAgent(self.state,mask)
-            idx = self.divine_action//2 + 1
-            # self.divine_list[idx] = True
-            werewolf = "WEREWOLF" if self.divine_action%2 != 1 else "HUMAN"
+            self.action = self.player.selectDivineAgent(self.divine_state,mask)
+            idx = self.action//2 + 1
+            werewolf = "WEREWOLF" if self.action%2 != 1 else "HUMAN"
             if idx == -1:
                 idx = self.randomSelect(self.base_info,self.alive_list,self.alive_to_num)
             self.myresult = 'DIVINED Agent[' + "{0:02d}".format(idx) + '] ' + werewolf
 
 
 
+# class predict_werewolf():  　
+#     def train(self):  　
+#         x,t = self.memory.choice(10)
+#         with chainer.using_config("train", True), chainer.using_config("enable_backprop", True):
+#             y = self.net(x)
+#             loss = F.sigmoid_cross_entropy(y,t)
+#             y = y.array
+#             y = np.array(np.argsort(np.argsort(-y)) < np.count_nonzero(t[0]))
+#             accuracy = np.count_nonzero(np.logical_and(y,t))/np.count_nonzero(t)
+#             self.net.cleargrads()
+#             loss.backward()
+#             self.optimizer.update()
+    
+#             return loss.array, accuracy
+
+#     def eval(self,x,t):
+#         with chainer.using_config("train", False), chainer.using_config("enable_backprop", False):
+#             y = self.net(x)
+#             loss = F.sigmoid_cross_entropy(y,t)
+#             y = y.array
+#             y = np.array(np.argsort(np.argsort(-y)) < np.count_nonzero(t[0]))
+#             accuracy = np.count_nonzero(np.logical_and(y,t))/np.count_nonzero(t)
+
+#         return loss.array, accuracy
+    
+#     def addVector(self, x, t):
+#         self.memory.append(x,t)

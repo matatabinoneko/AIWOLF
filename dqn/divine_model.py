@@ -25,7 +25,7 @@ GAMMA = 0.99
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print("brain use {}".format(device))
+print("divine model use {}".format(device))
     
 
 import sys
@@ -36,7 +36,6 @@ class ReplayMemory():
     def __init__(self):
         self.memory = []
         self.index = 0
-        self.win_memory = []
         self.max_Q_memory = []
         self.last_q = 0
 
@@ -54,18 +53,6 @@ class ReplayMemory():
     def __len__(self):
         return(len(self.memory))
 
-    def pushWinRatio(self,win):
-        writer.add_scalar('data/win_ratio',win,len(self.win_memory))
-        # if len(self.win_memory) == 0:
-        #     self.win_memory.append(win)
-        # else:
-        #     size = len(self.win_memory)
-        #     win = (self.win_memory[-1]*size + win)/(size+1)
-        #     self.win_memory.append(win)
-
-        self.win_memory.append(win)
-        # print("okwin",win,len(self.win_memory))
-
     def pushMaxQ(self,q):
         # if len(self.max_Q_memory) < 10:
         #     self.max_Q_memory.append(q)
@@ -74,8 +61,7 @@ class ReplayMemory():
         #     self.max_Q_memory.append(ave_q)
         # self.last_q = q
         self.max_Q_memory.append(q)
-        writer.add_scalar('data/vote_max_Q',q,len(self.max_Q_memory))
-        # print("okQ",q)
+        writer.add_scalar('data/divine_max_Q',q,len(self.max_Q_memory))
 
 
 class Model(nn.Module):
@@ -94,15 +80,16 @@ class Model(nn.Module):
         x = self.fc3(x)
         return x
 
-class Brain():
+class DivineModel():
     def __init__(self,n_input,n_hidden,n_output):
         self.n_input = n_input
         self.n_hidden = n_hidden
         self.n_output = n_output
 
         self.memory = ReplayMemory()
+
         self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
-        print("brain:",self.model,sep='\n')
+        print("divine model:",self.model,sep='\n')
 
         self.optimizer = optim.Adam(self.model.parameters(),lr=0.0001)
 
@@ -146,5 +133,4 @@ class Brain():
 
 
     def get_output(self,state):
-        # state = torch.FloatTensor(np.arange(1111).reshape(1,-1))
         return self.model(state).to("cpu")

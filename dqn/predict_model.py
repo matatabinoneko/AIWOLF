@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
+from torch.utils.tensorboard import SummaryWriter
+writer = SummaryWriter()
 
 BATCH_SIZE = 16
 CAPACITY = 100000
@@ -54,24 +56,30 @@ class Memory():
 
     def pushLossAccuracy(self,batch,day):
         loss,accuracy = batch.loss,batch.accuracy
-        if 0 < len(self.loss_accuracy_memory[day]):
-            l_a = self.loss_accuracy_memory[day][-1]
-            size = len(self.loss_accuracy_memory[day])
-            loss = (l_a.loss*size+loss)/(size+1)
-            accuracy = (l_a.accuracy*size+accuracy)/(size+1)
-            self.loss_accuracy_memory[day].append(LOSSACC(loss,accuracy))
-        else:
-            self.loss_accuracy_memory[day].append(batch)
+        # if 0 < len(self.loss_accuracy_memory[day]):
+        #     l_a = self.loss_accuracy_memory[day][-1]
+        #     size = len(self.loss_accuracy_memory[day])
+        #     loss = (l_a.loss*size+loss)/(size+1)
+        #     accuracy = (l_a.accuracy*size+accuracy)/(size+1)
+        #     self.loss_accuracy_memory[day].append(LOSSACC(loss,accuracy))
+        # else:
+        #     self.loss_accuracy_memory[day].apend(batch)
+
+        self.loss_accuracy_memory[day].append(batch)
+        writer.add_scalars('data/total_loss',{"day_"+str(day):loss},len(self.loss_accuracy_memory[day]))
+        writer.add_scalars('data/total_accuracy',{"day_"+str(day):accuracy},len(self.loss_accuracy_memory[day]))
 
 
 
 
 class Model(nn.Module):
-    def __init__(self,n_input,n_hidden,n_output):
+    def __init__(self,n_input,n_hidden,agent_num,role_num):
+        self.agent_num = agent_num
+        self.role_num  = role_num
         super(Model,self).__init__()
         self.fc1 = nn.Linear(n_input,n_hidden)
         self.fc2 = nn.Linear(n_hidden,n_hidden)
-        self.fc3 = nn.Linear(n_hidden,n_output)
+        self.fc3 = nn.Linear(n_hidden,agent_num*role_num)
         self.sigmoid = nn.Sigmoid()
         # d = nn.Dropout(p=0.5)
 
@@ -83,17 +91,16 @@ class Model(nn.Module):
         x = F.relu(x)
         x = self.fc3(x)
         x = self.sigmoid(x)
+        # print(x.shape)
+        # x = x.reshape(-1,self.agent_num,self.role_num)
+        # print(x.shape)
         return x
 
 class PredictRole():
-    def __init__(self,n_input,n_hidden,n_output):
-        self.n_input = n_input
-        self.n_hidden = n_hidden
-        self.n_output = n_output
-
+    def __init__(self,n_input,n_hidden,agent_num,role_num):
         self.memory = Memory()
 
-        self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
+        self.model = Model(n_input=n_input,n_hidden=n_hidden,agent_num=agent_num,role_num=role_num).to(device)
         print("pred model:",self.model,sep='\n')
         self.criterion = nn.BCELoss()
         self.optimizer = optim.Adam(self.model.parameters(),lr=0.001)
