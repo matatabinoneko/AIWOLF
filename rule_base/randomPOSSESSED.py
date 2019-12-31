@@ -10,7 +10,7 @@ import aiwolfpy.contentbuilder as cb
 import numpy as np
 
 
-myname = 'black'
+myname = 'random'
 
 class SampleAgent(object):
     
@@ -97,30 +97,30 @@ class SampleAgent(object):
         return cb.over()
         
     def vote(self):
-        for target in reversed(self.werewolf_list):
+
+        while(True):
+            target = np.random.randint(0,self.agent_num)
             if self.votable_mask[target] == True:
                 # print(target+1)
                 return target + 1
-        # return self.base_info['agentIdx']
-        # return self.target + 1
+        # for target in reversed(self.werewolf_list):
+        #     if self.votable_mask[target] == True:
+        #         # print(target+1)
+        #         return target + 1
+        # # return self.base_info['agentIdx']
+        # # return self.target + 1
     
     def attack(self):
         return self.base_info['agentIdx']
     
     def fake_divine(self):
-        # print(np.where(self.divinable_mask == True))
-        if len(np.where(self.divinable_mask == True)[0]) == 0:
-            self.divinable_mask.fill(True)
-            self.divinable_mask[self.base_info["agentIdx"]-1] = False
         self.not_report = True
         while(True):
             self.target = np.random.randint(0,self.agent_num)
             if self.divinable_mask[self.target] == True:
-                self.divinable_mask[self.target] = False
+                self.myresult = 'DIVINED Agent[' + "{0:02d}".format(self.target+1) + '] ' + "HUMAN"
                 break
-        self.werewolf_list.append(self.target)
-        self.myresult = 'DIVINED Agent[' + "{0:02d}".format(self.target+1) + '] ' + "WEREWOLF"
-        # print(self.myresult)
+
 
 
     def divine(self):
