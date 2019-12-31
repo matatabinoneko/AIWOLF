@@ -89,7 +89,7 @@ class DivineModel():
         self.memory = ReplayMemory()
 
         self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
-        print("divine model:",self.model,sep='\n')
+        # print("divine model:",self.model,sep='\n')
 
         self.optimizer = optim.Adam(self.model.parameters(),lr=0.0001)
 

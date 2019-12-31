@@ -24,7 +24,7 @@ class SampleAgent(object):
         ## myname ##
         self.myname = agent_name
         self.w_data = Environment(
-                                agent_num=10,
+                                agent_num=6,
                                 train_predict_mode=False,
                                 train_dqn_mode=False,
                                 train_divine_mode=False,

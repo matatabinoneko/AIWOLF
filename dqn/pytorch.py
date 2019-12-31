@@ -161,14 +161,17 @@ class Environment():
                     serializers.load_npz('./predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_10000.net', self.predict_net[i].net)
             else:
                 self.player.pred_model.model = torch.load('./predict_model/agent'+str(self.agent_num)+'/one_model/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_train_10000.net')
+                print("predict model is loaded.")
         if self.dqn_net_load == True or self.train_dqn_mode == False:
             path = "./dqn_model/agent"+str(self.agent_num)+'/'
             file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
+            print("dqn model is loaded.")
             self.player.brain.model = torch.load(path+file_name)
         if self.divine_net_load == True or self.train_dqn_mode == False:
             path = "./divine_model/agent"+str(self.agent_num)+'/'
             file_name = 'divine_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
             self.player.divine_model.model = torch.load(path+file_name)
+            print("divine model is loaded.")
 
 
 
@@ -675,18 +678,21 @@ class Environment():
         os.makedirs(daily_path,exist_ok=True)
         file_name = 'modify_predict_role_train_daily_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
         torch.save(self.player.pred_model.model, daily_path+file_name)
+        print("pred model is saved")
 
     def save_dqn_model(self):
         path = "./net_folder/dqn_model/agent"+str(self.agent_num)+'/'
         os.makedirs(path,exist_ok=True)
         file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
         torch.save(self.player.brain.model,path+file_name)
+        print("dqn model is saved")
 
     def save_divine_model(self):
         path = "./net_folder/divine_model/agent"+str(self.agent_num)+'/'
         os.makedirs(path,exist_ok=True)
         file_name = 'divine_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
         torch.save(self.player.divine_model.model,path+file_name)
+        print("divine model is saved")
 
     def addVectorToEachModel(self):
         
@@ -872,6 +878,7 @@ class Environment():
             if np.where(role==1)[0][0] == self.role_to_num["WEREWOLF"] and self.base_info["statusMap"].get(str(agent)) == "ALIVE":
                 alive_werewolf_num += 1
         # print(alive_werewolf_num)
+        
         if (0 < alive_werewolf_num and self.base_info["myRole"] in ["WEREWOLF","POSSESSED"]) or (alive_werewolf_num == 0 and self.base_info["myRole"] not in ["WEREWOLF","POSSESSED"]):
             # print("winnwe")
             win = True
