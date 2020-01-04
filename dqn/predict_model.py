@@ -103,7 +103,7 @@ class PredictRole():
         self.model = Model(n_input=n_input,n_hidden=n_hidden,agent_num=agent_num,role_num=role_num).to(device)
         # print("pred model:",self.model,sep='\n')
         self.criterion = nn.BCELoss()
-        self.optimizer = optim.Adam(self.model.parameters(),lr=0.001)
+        self.optimizer = optim.Adam(self.model.parameters())
 
 
 

@@ -10,7 +10,7 @@ import aiwolfpy.contentbuilder as cb
 import numpy as np
 
 
-myname = 'cash'
+myname = 'gray'
 
 class SampleAgent(object):
     
@@ -22,7 +22,8 @@ class SampleAgent(object):
         self.not_report = True
         self.target = -1
         self.done_last_commingout = False
-        
+
+        self.game_cnt = 0
 
         
         
@@ -159,6 +160,9 @@ class SampleAgent(object):
         return self.base_info['agentIdx']
     
     def finish(self):
+        self.game_cnt += 1
+        if self.game_cnt%100 == 0:
+            print("game cnt is {}".format(self.game_cnt))
         return None
     
 

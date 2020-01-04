@@ -65,7 +65,7 @@ class ReplayMemory():
         #     self.win_memory.append(win)
 
         self.win_memory.append(win)
-        print("okwin",win,len(self.win_memory))
+        # print("okwin",win,len(self.win_memory))
 
     def pushMaxQ(self,q):
         # if len(self.max_Q_memory) < 10:
@@ -76,7 +76,7 @@ class ReplayMemory():
         # self.last_q = q
         self.max_Q_memory.append(q)
         writer.add_scalar('data/vote_max_Q',q,len(self.max_Q_memory))
-        print("okQ",q)
+        # print("okQ",q)
 
 
 class Model(nn.Module):
@@ -105,7 +105,7 @@ class Brain():
         self.model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
         # print("brain:",self.model,sep='\n')
 
-        self.optimizer = optim.Adam(self.model.parameters(),lr=0.0001)
+        self.optimizer = optim.Adam(self.model.parameters())
 
 
 

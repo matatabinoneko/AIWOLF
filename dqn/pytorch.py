@@ -4,8 +4,6 @@ import aiwolfpy.contentbuilder as cb
 import numpy as np
 import re
 import os
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,7 +18,6 @@ X_T = namedtuple("X_T",("state","label"))
 
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
-
 
 
 from predict_model import PredictRole
@@ -38,11 +35,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 
 class Environment():
-    def __init__(self,agent_num=5,train_mode=False,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False,train_times=1000,predict_net_load=False,dqn_net_load=False,divine_net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False):
+    def __init__(self,agent_num=5,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False,train_times=1000,predict_net_load=False,dqn_net_load=False,divine_net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False):
         # super(self).__init__()
         self.Time = time.time()
         self.agent_num = agent_num
-        self.train_mode = train_mode
+        self.train_mode = True
         self.train_predict_mode = train_predict_mode
         self.train_dqn_mode = train_dqn_mode
         self.train_divine_mode = train_divine_mode
@@ -101,7 +98,7 @@ class Environment():
         self.identified_list = np.zeros((self.agent_num,self.agent_num,2))
         self.declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
         self.vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
-        self.vote_another_people = np.zeros(self.agent_num,dtype=np.int32)
+        # self.vote_another_people = np.zeros(self.agent_num,dtype=np.int32)
         self.alive_list = np.zeros((self.agent_num,3),dtype=np.int32)
         ##次元数を３次元に分離した
         self.alive_list[:,0] = 1
@@ -152,7 +149,7 @@ class Environment():
 
         self.t_role_cnt= np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
 
-        self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=500, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length+self.agent_num*self.role_num,dqn_n_hidden=200,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_mode=self.train_dqn_mode)
+        self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=500, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length+self.agent_num*self.role_num,dqn_n_hidden=200,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_predict_mode=self.train_predict_mode,train_dqn_mode=self.train_dqn_mode,train_divine_mode=self.train_divine_mode)
 
 
         if self.predict_net_load == True or self.train_predict_mode == False:
@@ -262,7 +259,7 @@ class Environment():
 
         self.declaration_vote_list.fill(0)
         self.vote_list.fill(0)
-        self.vote_another_people.fill(0)
+        # self.vote_another_people.fill(0)
 
         self.alive_list.fill(0)
         self.alive_list[:,0] = 1
@@ -878,7 +875,7 @@ class Environment():
             if np.where(role==1)[0][0] == self.role_to_num["WEREWOLF"] and self.base_info["statusMap"].get(str(agent)) == "ALIVE":
                 alive_werewolf_num += 1
         # print(alive_werewolf_num)
-        
+
         if (0 < alive_werewolf_num and self.base_info["myRole"] in ["WEREWOLF","POSSESSED"]) or (alive_werewolf_num == 0 and self.base_info["myRole"] not in ["WEREWOLF","POSSESSED"]):
             # print("winnwe")
             win = True
@@ -953,12 +950,12 @@ class Environment():
         #7:発言と投票先が変わった数をカウント．
         # print(self.declaration_vote_list)
         # print(self.vote_list)
-        for i in range(self.agent_num):
-            if 1 not in self.declaration_vote_list[i]:
-                continue
-            for j in range(self.agent_num):
-                if self.vote_list[i][j]==1 and self.declaration_vote_list[i][j]==0:
-                    self.vote_another_people[i] += 1
+        # for i in range(self.agent_num):
+        #     if 1 not in self.declaration_vote_list[i]:
+        #         continue
+        #     for j in range(self.agent_num):
+        #         if self.vote_list[i][j]==1 and self.declaration_vote_list[i][j]==0:
+        #             self.vote_another_people[i] += 1
         self.last_declaration_vote_list[...] += self.declaration_vote_list
         self.last_vote_list[...] += self.vote_list
         self.declaration_vote_list.fill(0)
@@ -1007,12 +1004,11 @@ class Environment():
             # self.divine_state = self.createXPredictData()
             mask = self.createMask()
             self.divine_action = self.player.selectDivineAgent(self.state,mask)
-            idx = self.divine_action//2 + 1
-            # self.divine_list[idx] = True
-            werewolf = "WEREWOLF" if self.divine_action%2 != 1 else "HUMAN"
-            if idx == -1:
-                idx = self.randomSelect(self.base_info,self.alive_list,self.alive_to_num)
-            self.myresult = 'DIVINED Agent[' + "{0:02d}".format(idx) + '] ' + werewolf
+            target = self.divine_action//2
+            role = "WEREWOLF" if self.divine_action%2 != 1 else "HUMAN"
+
+            self.other_role[target][self.side_to_num[role]] = 1
+            self.myresult = 'DIVINED Agent[' + "{0:02d}".format(target+1) + '] ' + role
 
 
 

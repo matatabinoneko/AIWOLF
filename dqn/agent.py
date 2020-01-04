@@ -30,21 +30,20 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 
 class Agent():
-    def __init__(self,pred_n_input, pred_n_hidden, pred_n_output,dqn_n_input, dqn_n_hidden, dqn_n_output, agent_num,role_num,t_role_cnt,train_mode=False):
+    def __init__(self,pred_n_input, pred_n_hidden, pred_n_output,dqn_n_input, dqn_n_hidden, dqn_n_output, agent_num,role_num,t_role_cnt,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False):
         self.agent_num = agent_num
         self.role_num = role_num
-        self.train_mode = train_mode
+        self.train_predict_mode = train_predict_mode
+        self.train_dqn_mode = train_dqn_mode
+        self.train_divine_mode = train_divine_mode
         self.answer = []
         self.kanning=False
         self.pred_model = PredictRole(pred_n_input,pred_n_hidden,agent_num,role_num)
         self.brain = Brain(n_input=dqn_n_input,n_hidden=dqn_n_hidden,n_output=dqn_n_output)
         self.divine_model = DivineModel(n_input=dqn_n_input,n_hidden=dqn_n_hidden,n_output=agent_num*2)
         self.last_pred_result = None
-        
-        if self.train_mode == True:
-            self.epsilon = 0
-        else:
-            self.epsilon = 0.2
+    
+        self.epsilon = 0.2
 
         if self.kanning==True:
             with open("../AIWolf-ver0.5.6/role.txt","r") as f:
@@ -98,7 +97,7 @@ class Agent():
             pred_result = self.pred_model.get_output(state)
             # print(type(pred_result))
             
-            if self.train_mode == True:
+            if self.train_dqn_mode == True:
                 if np.random.random() < self.epsilon:
                     # print("random",pred_result.detach().numpy())
                     return self.randomSelect(votable_mask)
@@ -176,8 +175,8 @@ class Agent():
             return self.randomDivineSelect(divinable_mask)
         self.divine_model.model.eval()
         with torch.no_grad():
-            
-            if self.train_mode == True:
+
+            if self.train_divine_mode == True:
                 if np.random.random() < self.epsilon:
                     return self.randomDivineSelect(divinable_mask)
 
@@ -186,7 +185,7 @@ class Agent():
             pred_result = self.pred_model.get_output(state)
             # print(type(pred_result))
             
-            if self.train_mode == True:
+            if self.train_divine_mode == True:
                 if np.random.random() < self.epsilon:
                     # print("random",pred_result.detach().numpy())
                     return self.randomDivineSelect(divinable_mask)
