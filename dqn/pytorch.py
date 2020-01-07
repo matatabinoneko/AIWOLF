@@ -97,7 +97,6 @@ class Environment():
         self.divined_list = np.zeros((self.agent_num,self.agent_num,2)) #0:HUMAN 1:WEREWOLF
         self.identified_list = np.zeros((self.agent_num,self.agent_num,2))
         self.declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
-        self.vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
         # self.vote_another_people = np.zeros(self.agent_num,dtype=np.int32)
         self.alive_list = np.zeros((self.agent_num,3),dtype=np.int32)
         ##次元数を３次元に分離した
@@ -136,20 +135,33 @@ class Environment():
         print(self.daily_vector_length)
        
 
+
+
+        #####集計用##########
         self.role_cnt = defaultdict(int)
         self.predict_cnt = defaultdict(int)
         self.correct_predict_cnt = defaultdict(int)
         self.using_alive_info_cnt_daily  = 0
         self.alive_werewolf = 0
-
         self.utiwake_cnt = 0
         self.correct_myrole = 0
         self.trust_my_skill = 0
         self.not_trust_my_skill = 0
+        self.white_divine = 0
+        self.black_divine = 0
 
         self.t_role_cnt= np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
 
-        self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=500, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length+self.agent_num*self.role_num,dqn_n_hidden=200,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_predict_mode=self.train_predict_mode,train_dqn_mode=self.train_dqn_mode,train_divine_mode=self.train_divine_mode)
+        if self.agent_num == 6:
+            pred_n_hidden = 500
+            dqn_n_hidden = 500
+            # divine_n_hidden = 500
+        elif self.agent_num == 10:
+            pred_n_hidden = 1200
+            dqn_n_hidden = 1200
+            # divine_n_hidden = 1200           
+
+        self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=pred_n_hidden, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length+self.agent_num*self.role_num,dqn_n_hidden=dqn_n_hidden,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_predict_mode=self.train_predict_mode,train_dqn_mode=self.train_dqn_mode,train_divine_mode=self.train_divine_mode)
 
 
         if self.predict_net_load == True or self.train_predict_mode == False:
@@ -163,11 +175,11 @@ class Environment():
             path = "./dqn_model/agent"+str(self.agent_num)+'/'
             file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
             print("dqn model is loaded.")
-            self.player.brain.model = torch.load(path+file_name)
+            self.player.brain.main_q_model = torch.load(path+file_name)
         if self.divine_net_load == True or self.train_dqn_mode == False:
             path = "./divine_model/agent"+str(self.agent_num)+'/'
             file_name = 'divine_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
-            self.player.divine_model.model = torch.load(path+file_name)
+            self.player.divine_model.main_q_model = torch.load(path+file_name)
             print("divine model is loaded.")
 
 
@@ -681,14 +693,14 @@ class Environment():
         path = "./net_folder/dqn_model/agent"+str(self.agent_num)+'/'
         os.makedirs(path,exist_ok=True)
         file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
-        torch.save(self.player.brain.model,path+file_name)
+        torch.save(self.player.brain.main_q_model,path+file_name)
         print("dqn model is saved")
 
     def save_divine_model(self):
         path = "./net_folder/divine_model/agent"+str(self.agent_num)+'/'
         os.makedirs(path,exist_ok=True)
         file_name = 'divine_num_'+str(self.agent_num)+'_train_'+str(self.train_cnt)+'.net'
-        torch.save(self.player.divine_model.model,path+file_name)
+        torch.save(self.player.divine_model.main_q_model,path+file_name)
         print("divine model is saved")
 
     def addVectorToEachModel(self):
@@ -810,6 +822,7 @@ class Environment():
         if 0 < (self.trust_my_skill+self.not_trust_my_skill):
             print("trust my skill rate is {:.2f}".format(self.trust_my_skill/(self.trust_my_skill+self.not_trust_my_skill)))
         print("win_ratio is {:.2f}".format(np.mean(self.player.brain.memory.win_memory)))
+        self.displayFakeDivineCount()
 
     def plot_accu_loss(self):
         fig = plt.figure(figsize=(12.0,8.0))
@@ -904,8 +917,8 @@ class Environment():
                 self.player.memorize_divine_state(state=self.state,action=np.array(self.divine_action).reshape(1,1),next_state=None,reward=self.reward)
                 self.player.update_divine_model()
 
-        self.train_cnt += 1
-
+        if (self.train_cnt%3) == 0:
+            self.player.update_target_q_function()
 
         if self.train_cnt%(self.train_times//10) == 0:
             sec = round(time.time()-self.Time)
@@ -933,6 +946,7 @@ class Environment():
             self.plot_accu_loss()
             writer.close()
 
+        self.train_cnt += 1
 
     def updateVoteList(self,index):
         self.vote_list[self.diff_data["idx"][index]-1][self.diff_data["agent"][index]-1] = 1
@@ -1004,11 +1018,20 @@ class Environment():
             # self.divine_state = self.createXPredictData()
             mask = self.createMask()
             self.divine_action = self.player.selectDivineAgent(self.state,mask)
+            # print(self.other_role)
+            # print("result is ",self.divine_action)
             target = self.divine_action//2
             role = "WEREWOLF" if self.divine_action%2 != 1 else "HUMAN"
+            if role == "WEREWOLF":
+                self.black_divine += 1
+            else:
+                self.white_divine += 1
+            # print("result is ",target,role)
 
             self.other_role[target][self.side_to_num[role]] = 1
             self.myresult = 'DIVINED Agent[' + "{0:02d}".format(target+1) + '] ' + role
 
 
+    def displayFakeDivineCount(self):
+        print("white rate is {:.3f}".format(self.white_divine/(self.white_divine+self.black_divine)))
 

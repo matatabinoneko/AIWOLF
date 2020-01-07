@@ -26,12 +26,12 @@ class SampleAgent(object):
         self.w_data = Environment(
                                 agent_num=6,
                                 train_predict_mode=False,
-                                train_dqn_mode=True,
-                                train_divine_mode=True,
+                                train_dqn_mode=False,
+                                train_divine_mode=False,
                                 predict_net_load=True,
                                 dqn_net_load=True,
                                 divine_net_load=True,
-                                train_times=100000,
+                                train_times=1000,
                                 )
 
 
