@@ -24,6 +24,7 @@ class SampleAgent(object):
         self.done_last_commingout = False
 
         self.game_cnt = 0
+        self.win_ratio_list = []
 
         
         
@@ -58,6 +59,7 @@ class SampleAgent(object):
         else:
             self.werewolf_num = 3
         self.alive_agent_num = self.agent_num
+        self.agent_role = [''for i in range(self.agent_num)]
             
         
     def update(self, base_info, diff_data, request):
@@ -70,18 +72,24 @@ class SampleAgent(object):
             if self.base_info['myRole'] == 'POSSESSED':
                 self.do_fake_report = False
             for agent,status in self.base_info["statusMap"].items():
-                self.alive_agent_num = self.agent_num
                 agent = int(agent)-1
                 if status == "DEAD":
-                    self.alive_agent_num -= 1
                     self.votable_mask[agent] = False
                     self.divinable_mask[agent] = False
             # print(self.votable_mask)
             # print(self.divinable_mask)
 
+
         if self.do_fake_report== False:
             self.do_fake_report = True
             self.fake_divine()
+
+        for i in range(len(diff_data)):
+            if diff_data["type"][i] == 'finish':
+                # self.countEachRole(i)
+                agent = diff_data["agent"][i]-1
+                role = diff_data["text"][i].split(' ')[2]
+                self.agent_role[i] = role
 
 
         # if request == "DAILY_FINISH" and 1 <= base_info["day"]:
@@ -160,9 +168,18 @@ class SampleAgent(object):
         return self.base_info['agentIdx']
     
     def finish(self):
+        self.win_ratio_list.append(0)
+        for i in range(self.agent_num):
+            # print(self.agent_role[i],self.base_info["statusMap"].get(str(i+1)))
+            if self.agent_role[i]=="WEREWOLF" and self.base_info["statusMap"].get(str(i+1)) == "ALIVE":
+                self.win_ratio_list[-1] = 1
+                # print("win")
+                break
+
+
         self.game_cnt += 1
         if self.game_cnt%100 == 0:
-            print("game cnt is {}".format(self.game_cnt))
+            print("game cnt is {}  win ratio is {:.3f}".format(self.game_cnt,np.mean(self.win_ratio_list)))
         return None
     
 
