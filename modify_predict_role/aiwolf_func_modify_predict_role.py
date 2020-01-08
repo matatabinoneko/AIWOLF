@@ -116,6 +116,9 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.using_alive_info_cnt_daily  = 0
         self.alive_werewolf = 0
 
+        self.ww_cnt = [0 for i in range(self.role_num)]
+        self.ww_collect = [0 for i in range(self.role_num)]
+
         self.utiwake_cnt = 0
         self.correct_myrole = 0
         self.trust_my_skill = 0
@@ -156,14 +159,14 @@ class modify_predict_role_data_info(modify_vector_data_info):
         self.daily_vector = np.hstack((
                                     self.co_list,#カミングアウト役職
                                     self.divined_list.reshape(self.agent_num,-1),#占い結果
-                                    # self.seer_co_oder,#占いカミングアウト順番
+                                    ######## self.seer_co_oder,#占いカミングアウト順番
                                     np.array(tmp).reshape(-1,1),#占いカミングアウト順番
                                     self.last_declaration_vote_list,#前回までの投票宣言先
                                     self.last_vote_list,#前回までの投票先
                                     self.declaration_vote_list,#今回の投票宣言先
                                     self.alive_list,#生襲追の情報
                                     self.ag_esti_list,#肯定的意見の数
-                                    self.disag_esti_list,#否定的意見の数
+                                    # self.disag_esti_list,#否定的意見の数
                                     ))
 
         if "MEDIUM" in self.role_to_num.keys():
@@ -178,10 +181,10 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
     def createSubFeat(self):
         common_feats = np.hstack((
-            # self.day,#日にち
+            ###### self.day,#日にち
             np.where(self.day==1)[0][0]+1,#日にち
             self.my_agent_id,#自分の番号
-            # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
+            ######## self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
             self.my_role,#自分の役職
             self.other_role.reshape(-1)#自分の主観情報
             ))
@@ -476,7 +479,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
         return tmp
 
 
-    def update_predict_result(self,y,t):
+    def update_predict_result(self,y,t,all_y):
+        all_t = t.reshape(self.agent_num,self.role_num)
         y = self.decode(y.reshape(self.agent_num,self.role_num))
         t = self.decode(t.reshape(self.agent_num,self.role_num))
         # print(y)
@@ -524,6 +528,18 @@ class modify_predict_role_data_info(modify_vector_data_info):
 
         if y[self.base_info["agentIdx"]-1] == t[self.base_info["agentIdx"]-1]:
             self.correct_myrole+=1
+        [self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]
+        all_y = np.array(np.argsort(np.argsort(-all_y,axis=0),axis=0) < [self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.int32)
+        # print(all_y)
+        # print(all_t)
+        # print()
+
+        for i in range(self.role_num):
+            self.ww_cnt[i] += self.utiwake[self.num_to_role[i]]
+            for j in range(len(all_y)):
+                if all_y[j][i] == 1 and all_t[j][i]==1:
+                    self.ww_collect[i]+= 1
+
 
     def predict_model_train(self):
         for i in range(len(self.predict_net)):
@@ -556,8 +572,8 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     # print(np.array(self.predict_x[i]).reshape(data_num,-1).astype(np.float32))
                     # print(np.tile(np.array(self.predict_t).reshape(1,-1),(data_num,1)).astype(np.int32))
                     for x in self.predict_x[i]:
-                        loss, accuracy, predict_y = self.predict_net[0].eval(np.array(x).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
-                        self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32))
+                        loss, accuracy, predict_y, all_y = self.predict_net[0].eval(np.array(x).reshape(1,-1).astype(np.float32), np.array(self.predict_t).reshape(1,-1).astype(np.int32))
+                        self.update_predict_result(predict_y, np.array(self.predict_t).astype(np.int32),all_y)
                         if self.train_mode==False:
                             self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
 
@@ -667,7 +683,7 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 precision=self.correct_predict_cnt[role]/self.predict_cnt[role]
                 f_1 = 2*recall*precision/(recall+precision)   
 
-                print("{:<10}, recall:{:<.2f}, precision:{:<.2f}, f-1:{:<.2f}\n".format(role,recall, precision,f_1))
+                print("{:<10}, recall:{:<.2f}, precision:{:<.2f}, f-1:{:<.3f}\n".format(role,recall, precision,f_1))
                 # print("TP:{}  TN:{}  FP:{}  FN{}".format(self.correct_predict_cnt[role],self.predict_cnt[role]-self.correct_predict_cnt[role],self.role_cnt[role]-self.correct_predict_cnt[role], (sum_predict_cnt-self.predict_cnt[role]-self.role_cnt[role]+self.correct_predict_cnt[role]),))
                 sum_correct_pred += self.correct_predict_cnt[role]
                 sum_role_pred += self.role_cnt[role]
@@ -678,12 +694,21 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 print("day{:<2}  accuracy:{:<.2f}".format(i,np.mean(self.predict_net[i].memory.accuracy_memory)))
         
         # print(sum_game_cnt)
-        print("correct utiwake rate is {:.2f}".format(self.utiwake_cnt/sum_game_cnt))
-        print("correct alive werewolf rate is {:.2f}".format(self.alive_werewolf/sum_game_cnt))
-        print("correct my role rate is {:.2f}".format(self.correct_myrole/sum_game_cnt))
+        print("correct utiwake rate is {:.3f}".format(self.utiwake_cnt/sum_game_cnt))
+        print("correct alive werewolf rate is {:.3f}".format(self.alive_werewolf/sum_game_cnt))
+        print("correct my role rate is {:.3f}".format(self.correct_myrole/sum_game_cnt))
         # print(self.trust_my_skill,self.not_trust_my_skill)
         if 0 < (self.trust_my_skill+self.not_trust_my_skill):
-            print("trust my skill rate is {:.2f}".format(self.trust_my_skill/(self.trust_my_skill+self.not_trust_my_skill)))
+            print("trust my skill rate is {:.3f}".format(self.trust_my_skill/(self.trust_my_skill+self.not_trust_my_skill)))
+
+        self.displayPredictEachRole()
+
+    def displayPredictEachRole(self):
+        for i in range(self.role_num):
+            # print(i,self.role_to_num.get(i))
+            print("{} accuracy is {:>3.3f}".format(self.num_to_role.get(i),(self.ww_collect[i]/self.ww_cnt[i])))
+            print(self.ww_collect[i],self.ww_cnt[i])
+        
 
     def plot_accu_loss(self):
         fig = plt.figure(figsize=(12.0,8.0))
@@ -869,15 +894,18 @@ class predict_role(predict_role):
             # print(-F.log(F.softmax(y,axis=1)))
             # print(t)
             # print(F.sum(-F.log(F.softmax(y,axis=1))*t))
-            y = np.array(np.argsort(np.argsort(-y,axis=1),axis=1) < 1)
-            accuracy = np.count_nonzero(np.logical_and(y,t))/np.count_nonzero(t)
-            # y = self.decode(y)
-            # print(y)
-            y = y.reshape(-1)
-        return loss.array, accuracy, y
+            
+            y_ret = np.array(np.argsort(np.argsort(-y,axis=1),axis=1) < 1)
+            accuracy = np.count_nonzero(np.logical_and(y_ret,t))/np.count_nonzero(t)
+            # y_ret = self.decode(y_ret)
+            # print(y_ret)
+            y_ret = y_ret.reshape(-1)
+
+        return loss.array, accuracy, y_ret, y
 
 
     def addVector(self, x, t):
         for i in range(len(x)):
             self.memory.append(x[i],t)
+
 
