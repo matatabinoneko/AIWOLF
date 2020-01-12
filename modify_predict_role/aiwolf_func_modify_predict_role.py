@@ -63,9 +63,9 @@ class modify_predict_role_data_info(modify_vector_data_info):
             self.utiwake = {"VILLAGER":8,"SEER":1,"POSSESSED":1,"WEREWOLF":3,"MEDIUM":1,"BODYGUARD":1}
         
         self.num_to_role = {v:k for k,v in self.role_to_num.items()}
-        self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM","POSSESSED"]
-        self.werewolf_list = ["WEREWOLF"]
-        self.side_to_num = {"HUMAN":0,"VILLAGER":0,"SEER":0,"BODYGUARD":0,"MEDIUM":0,"POSSESSED":0,"WEREWOLF":1}
+        self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
+        self.werewolf_list = ["WEREWOLF","POSSESSED"]
+        self.side_to_num = {"HUMAN":0,"VILLAGER":0,"SEER":0,"BODYGUARD":0,"MEDIUM":0,"POSSESSED":1,"WEREWOLF":1}
         self.role_num = len(self.role_to_num)
 
         self.max_day = self.agent_num  - (2*self.utiwake.get("WEREWOLF"))
@@ -157,34 +157,34 @@ class modify_predict_role_data_info(modify_vector_data_info):
                 if self.seer_co_oder[i][j] == 1:
                     tmp[i] = j+1
         self.daily_vector = np.hstack((
+                                    ################## self.seer_co_oder,#占いカミングアウト順番
                                     self.co_list,#カミングアウト役職
                                     self.divined_list.reshape(self.agent_num,-1),#占い結果
-                                    ######## self.seer_co_oder,#占いカミングアウト順番
                                     np.array(tmp).reshape(-1,1),#占いカミングアウト順番
                                     self.last_declaration_vote_list,#前回までの投票宣言先
                                     self.last_vote_list,#前回までの投票先
                                     self.declaration_vote_list,#今回の投票宣言先
                                     self.alive_list,#生襲追の情報
                                     self.ag_esti_list,#肯定的意見の数
-                                    # self.disag_esti_list,#否定的意見の数
+                                    self.disag_esti_list,#否定的意見の数
                                     ))
 
         if "MEDIUM" in self.role_to_num.keys():
             self.daily_vector = np.hstack((self.daily_vector,self.identified_list.reshape(self.agent_num,-1),)) #霊媒結果
 
-        #発話割合
-        if np.sum(self.talk_cnt) == 0:
-            self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt))
-        else:
-            self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt/np.sum(self.talk_cnt)))
-        # print(self.daily_vector.shape)
+        ##################発話割合
+        ################## if np.sum(self.talk_cnt) == 0:
+        ##################     self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt))
+        ################## else:
+        ##################     self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt/np.sum(self.talk_cnt)))
+        ################## print(self.daily_vector.shape)
 
     def createSubFeat(self):
         common_feats = np.hstack((
-            ###### self.day,#日にち
-            np.where(self.day==1)[0][0]+1,#日にち
-            self.my_agent_id,#自分の番号
+            ########################## np.where(self.day==1)[0][0]+1,#日にち
             ######## self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
+            self.day,#日にち
+            self.my_agent_id,#自分の番号
             self.my_role,#自分の役職
             self.other_role.reshape(-1)#自分の主観情報
             ))
@@ -507,12 +507,12 @@ class modify_predict_role_data_info(modify_vector_data_info):
                     tmp += 1
             
             if self.num_to_role.get((np.where(self.my_role==1)[0][0])) in ["SEER","MEDIUM"]:
-                if self.num_to_role[y_role] in self.human_list:
+                if self.num_to_role[y_role] in ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM","POSSESSED"]:
                     if self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
                         self.not_trust_my_skill += 1
                     elif self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1:
                         self.trust_my_skill += 1
-                elif self.num_to_role[y_role] in self.werewolf_list:
+                elif self.num_to_role[y_role] in ["WEREWOLF"]:
                     if self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1:
                         self.not_trust_my_skill += 1
                     elif self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
