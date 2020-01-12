@@ -37,7 +37,6 @@ class ReplayMemory():
     def __init__(self):
         self.memory = []
         self.index = 0
-        self.win_memory = []
         self.max_Q_memory = []
         self.last_q = 0
 
@@ -55,18 +54,6 @@ class ReplayMemory():
     def __len__(self):
         return(len(self.memory))
 
-    def pushWinRatio(self,win):
-        writer.add_scalar('data/win_ratio',win,len(self.win_memory))
-        
-        # if len(self.win_memory) == 0:
-        #     self.win_memory.append(win)
-        # else:
-        #     size = len(self.win_memory)
-        #     win = (self.win_memory[-1]*size + win)/(size+1)
-        #     self.win_memory.append(win)
-
-        self.win_memory.append(win)
-        # print("okwin",win,len(self.win_memory))
 
     def pushMaxQ(self,q):
         # if len(self.max_Q_memory) < 10:
@@ -151,7 +138,7 @@ class Brain():
         self.td_error_memory = TDerrorMemory()
         self.main_q_model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
         self.target_q_model = Model(n_input=n_input,n_hidden=n_hidden,n_output=n_output).to(device)
-        # print("brain:",self.model,sep='\n')
+        print("brain:",self.main_q_model,sep='\n')
 
         self.optimizer = optim.Adam(self.main_q_model.parameters())
 
@@ -200,6 +187,7 @@ class Brain():
 
     def get_output(self,state):
         # state = torch.FloatTensor(np.arange(1111).reshape(1,-1))
+        state = state.to(device)
         return self.target_q_model(state).to("cpu")
 
     def make_minibatch(self):
@@ -231,13 +219,13 @@ class Brain():
         self.target_q_model.eval()
         self.state_action_values = self.main_q_model(self.state_batch).gather(1,self.action_batch)
         self.memory.pushMaxQ(torch.mean(self.state_action_values).detach().item())
-        non_final_mask = torch.BoolTensor(tuple(map(lambda s:s is not None, self.batch.next_state)))
-        next_state_values = torch.zeros(BATCH_SIZE)
-        a_m = torch.zeros(BATCH_SIZE).type(torch.LongTensor)##なんでこんな形なん？
+        non_final_mask = torch.BoolTensor(tuple(map(lambda s:s is not None, self.batch.next_state))).to(device)
+        next_state_values = torch.zeros(BATCH_SIZE).to(device)
+        a_m = torch.zeros(BATCH_SIZE).type(torch.LongTensor).to(device)##なんでこんな形なん？
         # print(a_m.dtype, non_final_mask.dtype, self.non_final_next_states.dtype)
         a_m[non_final_mask] = self.main_q_model(self.non_final_next_states).detach().max(1)[1]
         a_m_non_final_next_states = a_m[non_final_mask].view(-1,1)
-        next_state_values[non_final_mask] = self.target_q_model(self.non_final_next_states).gather(1,a_m_non_final_next_states).detach().squeeze()
+        next_state_values[non_final_mask] = self.target_q_model(self.non_final_next_states).gather(1,a_m_non_final_next_states).detach().squeeze().to(device)
         expected_state_action_values = self.reward_batch + GAMMA * next_state_values
 
         return expected_state_action_values

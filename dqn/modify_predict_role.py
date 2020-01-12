@@ -24,14 +24,15 @@ class SampleAgent(object):
         ## myname ##
         self.myname = agent_name
         self.w_data = Environment(
-                                agent_num=6,
+                                agent_num=5,
                                 train_predict_mode=False,
                                 train_dqn_mode=False,
                                 train_divine_mode=False,
+                                # explore = True,
                                 predict_net_load=True,
                                 dqn_net_load=True,
                                 divine_net_load=True,
-                                train_times=1000,
+                                train_times=10000,
                                 )
 
 

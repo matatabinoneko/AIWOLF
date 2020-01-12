@@ -30,12 +30,13 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 
 class Agent():
-    def __init__(self,pred_n_input, pred_n_hidden, pred_n_output,dqn_n_input, dqn_n_hidden, dqn_n_output, agent_num,role_num,t_role_cnt,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False):
+    def __init__(self,pred_n_input, pred_n_hidden, pred_n_output,dqn_n_input, dqn_n_hidden, dqn_n_output, agent_num,role_num,t_role_cnt,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False,explore=False):
         self.agent_num = agent_num
         self.role_num = role_num
         self.train_predict_mode = train_predict_mode
         self.train_dqn_mode = train_dqn_mode
         self.train_divine_mode = train_divine_mode
+        self.explore = explore
         self.answer = []
         self.kanning=False
         self.pred_model = PredictRole(pred_n_input,pred_n_hidden,agent_num,role_num)
@@ -74,9 +75,10 @@ class Agent():
                 return target
 
     def createDqnState(self,state):
-        pred_result = self.get_predict_output(state)
-        # return torch.cat((torch.FloatTensor(state),torch.FloatTensor(pred_result),torch.FloatTensor(action_type)),dim=1).float()
-        return torch.cat((torch.FloatTensor(state),torch.FloatTensor(pred_result)),dim=1).float()
+        # pred_result = self.get_predict_output(state)
+        # return torch.FloatTensor(pred_result)
+        return torch.FloatTensor(state)
+        # return torch.cat((torch.FloatTensor(state),torch.FloatTensor(pred_result)),dim=1).float()
 
     def selectAgent(self,state,votable_mask,agent_num,role_num,num_to_role):
         #返り値は１始まり
@@ -88,6 +90,7 @@ class Agent():
         #             return target + 1
         #     return self.randomSelect(votable_mask),None
 
+        # if self.explore == True and self.train_dqn_mode == True:
         if self.train_dqn_mode == True:
             if np.random.random() < self.epsilon:
                 # print("random",pred_result.detach().numpy())
@@ -126,7 +129,7 @@ class Agent():
     def update_q_function(self):
         self.brain.replay()
     
-    def update_divine_model(self):
+    def update_divine_function(self):
         self.divine_model.replay()
 
     # def get_action(self,state,episode):
@@ -154,9 +157,9 @@ class Agent():
         self.divine_model.memory.push(state,action,next_state,reward)
 
 
-    def updateWinRatio(self,win):
-        win = 1 if win else 0
-        self.brain.memory.pushWinRatio(win)
+    # def updateWinRatio(self,win):
+    #     win = 1 if win else 0
+    #     self.brain.memory.pushWinRatio(win)
 
     def get_predict_output(self,state):
         self.last_pred_result = self.pred_model.get_output(state).detach().numpy()
@@ -176,6 +179,7 @@ class Agent():
         self.divine_model.target_q_model.eval()
         with torch.no_grad():
 
+            # if self.explore == True and self.train_divine_mode == True:
             if self.train_divine_mode == True:
                 if np.random.random() < self.epsilon:
                     return self.randomDivineSelect(divinable_mask)
@@ -198,8 +202,7 @@ class Agent():
                     return target
             return randomDivineSelect(divinable_mask)
 
-    def update_q_function(self):
-        self.brain.replay()
 
     def update_target_q_function(self):
         self.brain.update_target_q_model()
+        self.divine_model.update_target_q_model()

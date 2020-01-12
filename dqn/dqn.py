@@ -209,8 +209,8 @@ class Environment():
 
     def createSubFeat(self):
         common_feats = np.hstack((
-            # self.day,#日にち
-            np.where(self.day==1)[0][0]+1,#日にち
+            self.day,#日にち
+            # np.where(self.day==1)[0][0]+1,#日にち
             self.my_agent_id,#自分の番号
             # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
             self.my_role,#自分の役職
@@ -645,12 +645,12 @@ class Environment():
         #             if self.train_mode==False:
         #                 self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
 
-    def save_each_model(self):
-        for i in range(len(self.predict_net)):
-            daily_path = './net_folder/predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/'
-            file_name = 'modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_'+str(self.train_cnt)+'.net'
-            os.makedirs(daily_path, exist_ok=True)
-            chainer.serializers.save_npz(daily_path+file_name, self.predict_net[i].net)
+    # def save_each_model(self):
+    #     for i in range(len(self.predict_net)):
+    #         daily_path = './net_folder/predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/'
+    #         file_name = 'modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_'+str(self.train_cnt)+'.net'
+    #         os.makedirs(daily_path, exist_ok=True)
+    #         chainer.serializers.save_npz(daily_path+file_name, self.predict_net[i].net)
 
         # for i in range(len(self.player_net)):
         #     player_path = './net_folder/player_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/'

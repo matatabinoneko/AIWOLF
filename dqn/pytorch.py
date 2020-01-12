@@ -35,7 +35,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 
 class Environment():
-    def __init__(self,agent_num=5,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False,train_times=1000,predict_net_load=False,dqn_net_load=False,divine_net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False):
+    def __init__(self,agent_num=5,train_predict_mode=False,train_dqn_mode=False,train_divine_mode=False,train_times=1000,predict_net_load=False,dqn_net_load=False,divine_net_load=False,test_train_mode=False,each_model=False,epsilon=0.3,kanning=False,explore=False):
         # super(self).__init__()
         self.Time = time.time()
         self.agent_num = agent_num
@@ -76,9 +76,9 @@ class Environment():
             self.utiwake = {"VILLAGER":8,"SEER":1,"POSSESSED":1,"WEREWOLF":3,"MEDIUM":1,"BODYGUARD":1}
         
         self.num_to_role = {v:k for k,v in self.role_to_num.items()}
-        self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM","POSSESSED"]
-        self.werewolf_list = ["WEREWOLF"]
-        self.side_to_num = {"HUMAN":0,"VILLAGER":0,"SEER":0,"BODYGUARD":0,"MEDIUM":0,"POSSESSED":0,"WEREWOLF":1}
+        self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
+        self.werewolf_list = ["WEREWOLF","POSSESSED"]
+        self.side_to_num = {"HUMAN":0,"VILLAGER":0,"SEER":0,"BODYGUARD":0,"MEDIUM":0,"POSSESSED":1,"WEREWOLF":1}
         self.role_num = len(self.role_to_num)
 
         self.max_day = self.agent_num  - (2*self.utiwake.get("WEREWOLF"))
@@ -108,7 +108,7 @@ class Environment():
 
         #新たな特徴量
         self.my_role = np.zeros((self.role_num),dtype=np.int32)
-        self.talk_cnt = np.zeros((self.agent_num,1),dtype=np.int32)
+        # self.talk_cnt = np.zeros((self.agent_num,1),dtype=np.int32)
         self.my_agent_id = np.zeros((self.agent_num),dtype=np.int32)
         self.my_agent_id[-1] = 1
         self.other_role = np.zeros((self.agent_num,2),dtype=np.float32)
@@ -124,6 +124,9 @@ class Environment():
         self.reward = [0]
         self.vote_action = None
         self.pred_result = np.zeros((1,self.agent_num*self.role_num)).astype(np.float32)
+
+        self.vote_updatable = True
+        self.divine_updatable = False
 
         self.divine_action = None
 
@@ -149,10 +152,11 @@ class Environment():
         self.not_trust_my_skill = 0
         self.white_divine = 0
         self.black_divine = 0
+        self.win_ratio_list = []
 
         self.t_role_cnt= np.array([self.utiwake[self.num_to_role[i]] for i in range(self.role_num)]).astype(np.float32)
 
-        if self.agent_num == 6:
+        if self.agent_num <= 6:
             pred_n_hidden = 500
             dqn_n_hidden = 500
             # divine_n_hidden = 500
@@ -161,7 +165,7 @@ class Environment():
             dqn_n_hidden = 1200
             # divine_n_hidden = 1200           
 
-        self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=pred_n_hidden, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length+self.agent_num*self.role_num,dqn_n_hidden=dqn_n_hidden,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_predict_mode=self.train_predict_mode,train_dqn_mode=self.train_dqn_mode,train_divine_mode=self.train_divine_mode)
+        self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=pred_n_hidden, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length,dqn_n_hidden=dqn_n_hidden,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_predict_mode=self.train_predict_mode,train_dqn_mode=self.train_dqn_mode,train_divine_mode=self.train_divine_mode,explore=explore)
 
 
         if self.predict_net_load == True or self.train_predict_mode == False:
@@ -201,9 +205,9 @@ class Environment():
                 if self.seer_co_oder[i][j] == 1:
                     tmp[i] = j+1
         self.daily_vector = np.hstack((
+                                    ################ self.seer_co_oder,#占いカミングアウト順番
                                     self.co_list,#カミングアウト役職
                                     self.divined_list.reshape(self.agent_num,-1),#占い結果
-                                    # self.seer_co_oder,#占いカミングアウト順番
                                     np.array(tmp).reshape(-1,1),#占いカミングアウト順番
                                     self.last_declaration_vote_list,#前回までの投票宣言先
                                     self.last_vote_list,#前回までの投票先
@@ -217,18 +221,18 @@ class Environment():
             self.daily_vector = np.hstack((self.daily_vector,self.identified_list.reshape(self.agent_num,-1),)) #霊媒結果
 
         #発話割合
-        if np.sum(self.talk_cnt) == 0:
-            self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt))
-        else:
-            self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt/np.sum(self.talk_cnt)))
+        # if np.sum(self.talk_cnt) == 0:
+        #     self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt))
+        # else:
+        #     self.daily_vector = np.hstack((self.daily_vector,self.talk_cnt/np.sum(self.talk_cnt)))
         # print(self.daily_vector.shape)
 
     def createSubFeat(self):
         common_feats = np.hstack((
-            # self.day,#日にち
-            np.where(self.day==1)[0][0]+1,#日にち
-            self.my_agent_id,#自分の番号
-            # self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
+            ################# np.where(self.day==1)[0][0]+1,#日にち
+            ################# self.daily_vector[np.where(self.my_agent_id==1)[0][0],:],#自分のプレイヤベクトル
+            #################self.my_agent_id,#自分の番号
+            self.day,#日にち
             self.my_role,#自分の役職
             self.other_role.reshape(-1)#自分の主観情報
             ))
@@ -278,7 +282,7 @@ class Environment():
 
         self.my_role.fill(0)
         self.my_role[self.role_to_num[self.base_info["myRole"]]] = 1
-        self.talk_cnt.fill(0)
+        # self.talk_cnt.fill(0)
 
         self.my_agent_id.fill(0)
         self.my_agent_id[self.base_info["agentIdx"]-1] = 1
@@ -501,8 +505,8 @@ class Environment():
             '''talkのtext部分を解釈可能にparse'''
             talk_texts = talk_texts.split(' ')
             # print(talk_texts)
-            if not talk_texts[0] in ["Skip","Over"]:
-                self.talk_cnt[agent] += 1
+            # if not talk_texts[0] in ["Skip","Over"]:
+                # self.talk_cnt[agent] += 1
 
             if(talk_texts[0]=="Skip"):
                 None
@@ -638,12 +642,12 @@ class Environment():
                         tmp += 1
                 
                 if self.num_to_role.get((np.where(self.my_role==1)[0][0])) in ["SEER","MEDIUM"]:
-                    if self.num_to_role[y_role] in self.human_list:
+                    if self.num_to_role[y_role] in ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM","POSSESSED"]:
                         if self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
                             self.not_trust_my_skill += 1
                         elif self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1:
                             self.trust_my_skill += 1
-                    elif self.num_to_role[y_role] in self.werewolf_list:
+                    elif self.num_to_role[y_role] in ["WEREWOLF"]:
                         if self.divined_list[self.base_info["agentIdx"]-1][agent][0]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][0]==1:
                             self.not_trust_my_skill += 1
                         elif self.divined_list[self.base_info["agentIdx"]-1][agent][1]==1 or self.identified_list[self.base_info["agentIdx"]-1][agent][1]==1:
@@ -669,12 +673,12 @@ class Environment():
         #             if self.train_mode==False:
         #                 self.predict_net[i].memory.addLossAccuracy(loss,accuracy)
 
-    def save_each_model(self):
-        for i in range(len(self.predict_net)):
-            daily_path = './net_folder/predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/'
-            file_name = 'modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_'+str(self.train_cnt)+'.net'
-            os.makedirs(daily_path, exist_ok=True)
-            chainer.serializers.save_npz(daily_path+file_name, self.predict_net[i].net)
+    # def save_each_model(self):
+    #     for i in range(len(self.predict_net)):
+    #         daily_path = './net_folder/predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/'
+    #         file_name = 'modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_'+str(self.train_cnt)+'.net'
+    #         os.makedirs(daily_path, exist_ok=True)
+    #         chainer.serializers.save_npz(daily_path+file_name, self.predict_net[i].net)
 
         # for i in range(len(self.player_net)):
         #     player_path = './net_folder/player_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/'
@@ -703,12 +707,12 @@ class Environment():
         torch.save(self.player.divine_model.main_q_model,path+file_name)
         print("divine model is saved")
 
-    def addVectorToEachModel(self):
+    # def addVectorToEachModel(self):
         
-        for i in range(1,len(self.predict_x)):
-            if len(self.predict_x[i]) != 0:
-                for j in range(len(self.predict_x[i])):
-                    self.predict_net[i].addVector([self.predict_x[i][j]],self.predict_t)
+    #     for i in range(1,len(self.predict_x)):
+    #         if len(self.predict_x[i]) != 0:
+    #             for j in range(len(self.predict_x[i])):
+    #                 self.predict_net[i].addVector([self.predict_x[i][j]],self.predict_t)
         # if self.predict_train == True:
         #     for i in range(len(self.player_x)):
         #         for j in range(len(self.player_x[i])):
@@ -776,6 +780,7 @@ class Environment():
         elif request == "DAILY_FINISH" and 1 <= base_info["day"]:
             #0:自分が人間判定された数 1:自分が人狼判定された数 2:占い師の名乗り出た順番 3:報告した人間の数 4:報告した人狼の数 5:発言と投票先が変わった数．6:生死(#alive:0 attacked:1 execute:-1)　7~11:肯定的意見の数　12~16:否定的意見の数        
             self.updateVector()
+            self.next_state = self.createXPredictData()
 
             if self.base_info['myRole'] == 'POSSESSED':
                 if self.train_divine_mode==True and self.state is not None:
@@ -783,7 +788,6 @@ class Environment():
                 self.do_fake_report = False
 
             # self.next_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
-            self.next_state = self.createXPredictData()
             if self.train_dqn_mode==True and self.state is not None:
                 self.player.memorize_state(state=self.state,action=np.array(self.vote_action).reshape(1,1),next_state=self.next_state,reward=self.reward)
 
@@ -803,7 +807,7 @@ class Environment():
                 precision=self.correct_predict_cnt[role]/self.predict_cnt[role]
                 f_1 = 2*recall*precision/(recall+precision)   
 
-                print("{:<10}, recall:{:<.2f}, precision:{:<.2f}, f-1:{:<.2f}\n".format(role,recall, precision,f_1))
+                print("{:<10}, recall:{:<.3f}, precision:{:<.3f}, f-1:{:<.3f}\n".format(role,recall, precision,f_1))
                 # print("TP:{}  TN:{}  FP:{}  FN{}".format(self.correct_predict_cnt[role],self.predict_cnt[role]-self.correct_predict_cnt[role],self.role_cnt[role]-self.correct_predict_cnt[role], (sum_predict_cnt-self.predict_cnt[role]-self.role_cnt[role]+self.correct_predict_cnt[role]),))
                 sum_correct_pred += self.correct_predict_cnt[role]
                 sum_role_pred += self.role_cnt[role]
@@ -812,16 +816,16 @@ class Environment():
             _,accuracy = self.player.pred_model.memory.getLossAccuracy(i)
             if accuracy is not None:
                 accuracy = np.mean(accuracy)
-                print("day{:<2}  accuracy:{:<.2f}".format(i,accuracy))
+                print("day{:<2}  accuracy:{:<.3f}".format(i,accuracy))
         
         # print(sum_game_cnt)
-        print("correct utiwake rate is {:.2f}".format(self.utiwake_cnt/sum_game_cnt))
-        print("correct alive werewolf rate is {:.2f}".format(self.alive_werewolf/sum_game_cnt))
-        print("correct my role rate is {:.2f}".format(self.correct_myrole/sum_game_cnt))
+        print("correct utiwake rate is {:.3f}".format(self.utiwake_cnt/sum_game_cnt))
+        print("correct alive werewolf rate is {:.3f}".format(self.alive_werewolf/sum_game_cnt))
+        print("correct my role rate is {:.3f}".format(self.correct_myrole/sum_game_cnt))
         # print(self.trust_my_skill,self.not_trust_my_skill)
         if 0 < (self.trust_my_skill+self.not_trust_my_skill):
-            print("trust my skill rate is {:.2f}".format(self.trust_my_skill/(self.trust_my_skill+self.not_trust_my_skill)))
-        print("win_ratio is {:.2f}".format(np.mean(self.player.brain.memory.win_memory)))
+            print("trust my skill rate is {:.3f}".format(self.trust_my_skill/(self.trust_my_skill+self.not_trust_my_skill)))
+        print("win_ratio is {:.3f}".format(np.mean(self.win_ratio_list)))
         self.displayFakeDivineCount()
 
     def plot_accu_loss(self):
@@ -846,7 +850,7 @@ class Environment():
             if accuracy:
                 daily_accu.plot(accuracy,label="day"+str(i))
                 # plt.legend()
-        win_ratio.plot(self.player.brain.memory.win_memory,label="win_ratio")
+        win_ratio.plot(self.win_ratio_list,label="win_ratio")
         max_Q_mean = fig.add_subplot(2,2,4)
         plt.title("max_Q_mean")
         max_Q_mean.plot(self.player.brain.memory.max_Q_memory,label="max_Q_mean")
@@ -891,10 +895,10 @@ class Environment():
 
         if (0 < alive_werewolf_num and self.base_info["myRole"] in ["WEREWOLF","POSSESSED"]) or (alive_werewolf_num == 0 and self.base_info["myRole"] not in ["WEREWOLF","POSSESSED"]):
             # print("winnwe")
-            win = True
+            win = 1
             self.reward = [1]
         else:
-            win = False
+            win = 0
             self.reward = [0]
 
         # alive_werewolf_num = np.sum(np.array(self.predict_t).reshape(self.agent_num,self.role_num)[:,self.role_to_num["WEREWOLF"]])
@@ -907,22 +911,29 @@ class Environment():
         if self.train_dqn_mode == True:
             # print(self.vote_action)
             self.player.memorize_state(state=self.state,action=np.array(self.vote_action).reshape(1,1),next_state=None,reward=self.reward)
-            self.player.update_q_function()
-        self.player.updateWinRatio(win)
-        # writer.add_scalar('data/win_ratio',self.player.brain.memory.win_memory[-1],len(self.player.brain.memory.win_memory))
+            if self.vote_updatable == True:
+                self.player.update_q_function()
+        self.win_ratio_list.append(win)
+        writer.add_scalar('data/win_ratio',win,len(self.win_ratio_list))
+
 
         if self.base_info["myRole"] == "POSSESSED":
             if self.train_divine_mode == True:
                 # print(self.divine_action)
                 self.player.memorize_divine_state(state=self.state,action=np.array(self.divine_action).reshape(1,1),next_state=None,reward=self.reward)
-                self.player.update_divine_model()
+                if self.divine_updatable == True:
+                    self.player.update_divine_function()
 
-        if (self.train_cnt%3) == 0:
+        if (self.train_cnt%100) == 0:
+            self.vote_updatable,self.divine_updatable = self.divine_updatable, self.vote_updatable
+
+            
             self.player.update_target_q_function()
 
-        if self.train_cnt%(self.train_times//10) == 0:
+        # if self.train_cnt%(self.train_times//10) == 0:
+        if self.train_cnt%1000 == 0:
             sec = round(time.time()-self.Time)
-            print("train:{:<10}time is {:<2}hour {:<2}minutes {:<2}sec".format(self.train_cnt,sec//3600,(sec%3600)//60,(sec%60)))
+            print("train:{:<10}time is {:<2}hour {:<2}minutes {:<2}sec  {:.3f}win".format(self.train_cnt,sec//3600,(sec%3600)//60,(sec%60),np.mean(self.win_ratio_list)))
             # if self.train_mode == True:
             #     if self.each_model == True:
             #         self.save_each_model()

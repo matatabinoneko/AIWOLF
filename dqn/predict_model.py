@@ -81,14 +81,15 @@ class Model(nn.Module):
         self.fc2 = nn.Linear(n_hidden,n_hidden)
         self.fc3 = nn.Linear(n_hidden,agent_num*role_num)
         self.sigmoid = nn.Sigmoid()
-        # d = nn.Dropout(p=0.5)
+        self.d1 = nn.Dropout(0.5)
+        self.d2 = nn.Dropout(0.5)
 
 
     def forward(self,x):
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.fc2(x)
-        x = F.relu(x)
+        x = F.relu(self.fc1(x))
+        x = self.d1(x)
+        x = F.relu(self.fc2(x))
+        x = self.d2(x)
         x = self.fc3(x)
         x = self.sigmoid(x)
         # print(x.shape)
@@ -101,7 +102,7 @@ class PredictRole():
         self.memory = Memory()
 
         self.model = Model(n_input=n_input,n_hidden=n_hidden,agent_num=agent_num,role_num=role_num).to(device)
-        # print("pred model:",self.model,sep='\n')
+        print("pred model:",self.model,sep='\n')
         self.criterion = nn.BCELoss()
         self.optimizer = optim.Adam(self.model.parameters())
 
@@ -109,6 +110,7 @@ class PredictRole():
 
     def eval(self,state,label,agent_num,role_num):
         out = []
+        self.model.eval()
         with torch.no_grad():
             for i,x in enumerate(state):
                 if 0 < len(x):
@@ -131,6 +133,7 @@ class PredictRole():
 
 
     def train(self,agent_num,role_num):
+        self.model.train()
         if len(self.memory) < BATCH_SIZE:
             return None
 
@@ -154,4 +157,8 @@ class PredictRole():
         self.memory.pushLossAccuracy(batch=LOSSACC(loss.detach(),accuracy),day=0)
                 
     def get_output(self,state):
-        return self.model(state).to("cpu")
+        self.model.eval()
+        with torch.no_grad():
+            state = state.to(device)
+            # print(self.model(state).to("cpu"))
+            return self.model(state).to("cpu")
