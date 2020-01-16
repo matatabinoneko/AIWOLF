@@ -120,6 +120,7 @@ class Model(nn.Module):
         super(Model,self).__init__()
         self.fc1 = nn.Linear(n_input,n_hidden)
         self.fc2 = nn.Linear(n_hidden,n_hidden)
+        # self.fc = nn.Linear(n_hidden,n_hidden)
         self.fc3 = nn.Linear(n_hidden,n_output)
 
 
@@ -128,6 +129,7 @@ class Model(nn.Module):
         x = F.relu(x)
         x = self.fc2(x)
         x = F.relu(x)
+        # x =F.relu(self.fc(x))
         x = self.fc3(x)
         return x
 

@@ -116,11 +116,12 @@ class Environment():
         ####################################
         ## 強化学習用特徴量
         #################################
+        self.declaration_vote_list_for_fake = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
 
         self.action_to_num = {"vote":0,"divine":1,"guard":2,"attack":3}
         self.action_type = [0 for i in range(len(self.action_to_num))]
-        self.state = []
-        self.next_state = []
+        self.vote_state = []
+        self.vote_next_state = []
         self.reward = [0]
         self.vote_action = None
         self.pred_result = np.zeros((1,self.agent_num*self.role_num)).astype(np.float32)
@@ -129,6 +130,8 @@ class Environment():
         self.divine_updatable = False
 
         self.divine_action = None
+        self.divine_state = []
+        self.divine_next_state = []
 
         self.createDailyVector()
         self.createSubFeat()
@@ -165,24 +168,22 @@ class Environment():
             dqn_n_hidden = 1200
             # divine_n_hidden = 1200           
 
-        # self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=pred_n_hidden, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length+self.agent_num*self.role_num,dqn_n_hidden=dqn_n_hidden,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_predict_mode=self.train_predict_mode,train_dqn_mode=self.train_dqn_mode,train_divine_mode=self.train_divine_mode,explore=explore)
         self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=pred_n_hidden, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.daily_vector_length,dqn_n_hidden=dqn_n_hidden,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_predict_mode=self.train_predict_mode,train_dqn_mode=self.train_dqn_mode,train_divine_mode=self.train_divine_mode,explore=explore)
-        # self.player = Agent(pred_n_input=self.daily_vector_length, pred_n_hidden=pred_n_hidden, pred_n_output=self.agent_num*self.role_num,dqn_n_input=self.agent_num*self.role_num,dqn_n_hidden=dqn_n_hidden,dqn_n_output=self.agent_num, agent_num=self.agent_num,role_num=self.role_num,t_role_cnt = self.t_role_cnt,train_predict_mode=self.train_predict_mode,train_dqn_mode=self.train_dqn_mode,train_divine_mode=self.train_divine_mode,explore=explore)
 
 
-        if self.predict_net_load == True:
+        if self.predict_net_load == True or self.train_predict_mode == False:
             if self.each_model == True:
                 for i in range(len(self.predict_net)):
                     serializers.load_npz('./predict_model/agent'+str(self.agent_num)+'/each_model/day_'+str(i)+'/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_day_'+str(i)+'_train_10000.net', self.predict_net[i].net)
             else:
                 self.player.pred_model.model = torch.load('./predict_model/agent'+str(self.agent_num)+'/one_model/modify_predict_role_train_daily_num_'+str(self.agent_num)+'_train_10000.net')
                 print("predict model is loaded.")
-        if self.dqn_net_load == True:
+        if self.dqn_net_load == True or self.train_dqn_mode == False:
             path = "./dqn_model/agent"+str(self.agent_num)+'/'
             file_name = 'dqn_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
             print("dqn model is loaded.")
             self.player.brain.main_q_model = torch.load(path+file_name)
-        if self.divine_net_load == True:
+        if self.divine_net_load == True or self.train_dqn_mode == False:
             path = "./divine_model/agent"+str(self.agent_num)+'/'
             file_name = 'divine_num_'+str(self.agent_num)+'_train_'+str(10000)+'.net'
             self.player.divine_model.main_q_model = torch.load(path+file_name)
@@ -196,7 +197,29 @@ class Environment():
         self.graph_name += str(self.train_times)+"_"
         self.graph_name += "each_model" if self.each_model == True else "one_model"
 
+    def createDailyVectorForFake(self):
+        #カミングアウトのリスト　占い結果　占い師とカミングアウトした順番　前回の投票宣言　前回の投票先　生死情報　肯定的意見　否定的意見　発話の割合
 
+        tmp = [0 for i in range(self.agent_num)]
+        for i in range(len(self.seer_co_oder)):
+            for j in range(len(self.seer_co_oder[i])):
+                if self.seer_co_oder[i][j] == 1:
+                    tmp[i] = j+1
+        self.daily_vector_for_fake = np.hstack((
+                                    ################ self.seer_co_oder,#占いカミングアウト順番
+                                    self.co_list,#カミングアウト役職
+                                    self.divined_list.reshape(self.agent_num,-1),#占い結果
+                                    np.array(tmp).reshape(-1,1),#占いカミングアウト順番
+                                    self.last_declaration_vote_list,#前回までの投票宣言先
+                                    self.last_vote_list,#前回までの投票先
+                                    self.declaration_vote_list_for_fake,#今回の投票宣言先
+                                    self.alive_list,#生襲追の情報
+                                    self.ag_esti_list,#肯定的意見の数
+                                    self.disag_esti_list,#否定的意見の数
+                                    ))
+
+        if "MEDIUM" in self.role_to_num.keys():
+            self.daily_vector_for_fake = np.hstack((self.daily_vector,self.identified_list.reshape(self.agent_num,-1),)) #霊媒結果
 
     def createDailyVector(self):
         #カミングアウトのリスト　占い結果　占い師とカミングアウトした順番　前回の投票宣言　前回の投票先　生死情報　肯定的意見　否定的意見　発話の割合
@@ -266,7 +289,7 @@ class Environment():
         self.identified_list.fill(0)
         self.comingout = ''
         self.myresult = ''
-        self.not_reported = False
+        self.not_reported = True
         self.do_fake_report = False
         self.done_last_commingout = False
         self.vote_declare = False
@@ -303,8 +326,8 @@ class Environment():
         # self.player_x = [[]for i in range(self.agent_num)]
         # self.predict_t = [0 for i in range(self.agent_num)]
 
-        self.state=None
-        self.next_state=None
+        self.vote_state=None
+        self.vote_next_state=None
         self.reward = [0]
         self.divine_state = None
         self.divine_next_state = None
@@ -323,7 +346,10 @@ class Environment():
         # print(np.hstack((self.daily_vector.reshape(-1),common_feats, alpha_common_feats)).astype(np.float32).shape)
         return np.hstack((self.daily_vector.reshape(-1),self.sub_feat.reshape(-1))).astype(np.float32).reshape(1,-1)
 
-        
+    def createXPredictDataForFake(self):
+        self.createSubFeat()
+        self.createDailyVectorForFake()
+        return np.hstack((self.daily_vector_for_fake.reshape(-1),self.sub_feat.reshape(-1))).astype(np.float32).reshape(1,-1)
 
     def randomSelect(self,votable_mask):
         if len(np.where(votable_mask==True)[0]):
@@ -394,6 +420,17 @@ class Environment():
             if(self.not_reported == True):
                 self.do_fake_report = True
                 self.not_reported = False
+
+
+                #divinemodelの状態を保存
+                self.divine_next_state = self.createXPredictDataForFake()
+                # print(self.co_list[:,self.role_to_num["SEER"]],self.day)
+                if self.train_divine_mode==True and self.divine_state is not None and self.divine_action is not None:
+                    self.player.memorize_divine_state(state=self.divine_state,action=np.array(self.divine_action).reshape(1,1),next_state=self.divine_next_state,reward=self.reward)
+                self.divine_state = self.divine_next_state
+                self.getFakeResult()
+                #偽占い取得
+
                 return self.myresult
             return cb.over()
         elif self.base_info['myRole'] == 'WEREWOLF':
@@ -429,11 +466,11 @@ class Environment():
     def vote(self):
         # print("vote")
         # next_action = self.selectAgent("vote")
-        # self.next_state = self.createDqnState(state=self.createXPredictData(),action_type=self.action_type,pred_result=self.pred_result)
-        # if self.train_dqn_mode==True and self.state is not None:
-        #     self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=self.next_state,reward=self.reward)
+        # self.vote_next_state = self.createDqnState(state=self.createXPredictData(),action_type=self.action_type,pred_result=self.pred_result)
+        # if self.train_dqn_mode==True and self.vote_state is not None:
+        #     self.player.memorize_state(state=self.vote_state,action=np.array(self.action).reshape(1,1),next_state=self.vote_next_state,reward=self.reward)
 
-        # self.state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
+        # self.vote_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
 
         self.vote_action = self.selectAgent("vote")
         # self.action_type = self.encode(self.action_to_num["vote"],len(self.action_to_num))
@@ -769,31 +806,31 @@ class Environment():
         # self.updateTalk()
         if self.fake_role != '' and self.do_fake_report== False:
             self.do_fake_report = True
-            self.getFakeResult()
+            # self.getFakeResult()
 
         if request == 'DAILY_INITIALIZE' and 2 <= base_info["day"]:
-            # self.next_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
-            # if self.train_dqn_mode==True and self.state is not None:
-            #     self.player.memorize_state(state=self.state,action=np.array(self.action).reshape(1,1),next_state=self.next_state,reward=self.reward)
+            # self.vote_next_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
+            # if self.train_dqn_mode==True and self.vote_state is not None:
+            #     self.player.memorize_state(state=self.vote_state,action=np.array(self.action).reshape(1,1),next_state=self.vote_next_state,reward=self.reward)
 
             self.updateVote_declare()
-
 
         elif request == "DAILY_FINISH" and 1 <= base_info["day"]:
             #0:自分が人間判定された数 1:自分が人狼判定された数 2:占い師の名乗り出た順番 3:報告した人間の数 4:報告した人狼の数 5:発言と投票先が変わった数．6:生死(#alive:0 attacked:1 execute:-1)　7~11:肯定的意見の数　12~16:否定的意見の数        
             self.updateVector()
-            self.next_state = self.createXPredictData()
+            self.vote_next_state = self.createXPredictData()
 
             if self.base_info['myRole'] == 'POSSESSED':
-                if self.train_divine_mode==True and self.state is not None:
-                    self.player.memorize_divine_state(state=self.state,action=np.array(self.divine_action).reshape(1,1),next_state=self.next_state,reward=self.reward)
+            #     if self.train_divine_mode==True and self.vote_state is not None:
+            #         self.player.memorize_divine_state(state=self.vote_state,action=np.array(self.divine_action).reshape(1,1),next_state=self.vote_next_state,reward=self.reward)
                 self.do_fake_report = False
+                self.not_reported = True
 
-            # self.next_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
-            if self.train_dqn_mode==True and self.state is not None:
-                self.player.memorize_state(state=self.state,action=np.array(self.vote_action).reshape(1,1),next_state=self.next_state,reward=self.reward)
+            # self.vote_next_state = self.createDqnState(state=self.createXPredictData(),pred_result=self.pred_result)
+            if self.train_dqn_mode==True and self.vote_state is not None and self.vote_action is not None:
+                self.player.memorize_state(state=self.vote_state,action=np.array(self.vote_action).reshape(1,1),next_state=self.vote_next_state,reward=self.reward)
 
-            self.state = self.next_state
+            self.vote_state = self.vote_next_state
 
     def display_game_result(self):
         sum_role_pred = 0
@@ -827,7 +864,7 @@ class Environment():
         # print(self.trust_my_skill,self.not_trust_my_skill)
         if 0 < (self.trust_my_skill+self.not_trust_my_skill):
             print("trust my skill rate is {:.3f}".format(self.trust_my_skill/(self.trust_my_skill+self.not_trust_my_skill)))
-        print("win_ratio is {:.4f}".format(np.mean(self.win_ratio_list)))
+        print("win_ratio is {:.3f}".format(np.mean(self.win_ratio_list)))
         self.displayFakeDivineCount()
 
     def plot_accu_loss(self):
@@ -908,11 +945,11 @@ class Environment():
         # if alive_num-alive_werewolf_num <= alive_werewolf_num:
         
         
-        # print(type(self.state),type(self.action),type(self.next_state),type(self.reward))
+        # print(type(self.vote_state),type(self.action),type(self.vote_next_state),type(self.reward))
 
         if self.train_dqn_mode == True:
             # print(self.vote_action)
-            self.player.memorize_state(state=self.state,action=np.array(self.vote_action).reshape(1,1),next_state=None,reward=self.reward)
+            self.player.memorize_state(state=self.vote_state,action=np.array(self.vote_action).reshape(1,1),next_state=None,reward=self.reward)
             if self.vote_updatable == True:
                 self.player.update_q_function()
         self.win_ratio_list.append(win)
@@ -922,7 +959,7 @@ class Environment():
         if self.base_info["myRole"] == "POSSESSED":
             if self.train_divine_mode == True:
                 # print(self.divine_action)
-                self.player.memorize_divine_state(state=self.state,action=np.array(self.divine_action).reshape(1,1),next_state=None,reward=self.reward)
+                self.player.memorize_divine_state(state=self.divine_state,action=np.array(self.divine_action).reshape(1,1),next_state=None,reward=self.reward)
                 if self.divine_updatable == True:
                     self.player.update_divine_function()
 
@@ -935,7 +972,7 @@ class Environment():
         # if self.train_cnt%(self.train_times//10) == 0:
         if self.train_cnt%1000 == 0:
             sec = round(time.time()-self.Time)
-            print("train:{:<10}time is {:<2}hour {:<2}minutes {:<2}sec  {:.4f}win".format(self.train_cnt,sec//3600,(sec%3600)//60,(sec%60),np.mean(self.win_ratio_list)))
+            print("train:{:<10}time is {:<2}hour {:<2}minutes {:<2}sec  {:.3f}win".format(self.train_cnt,sec//3600,(sec%3600)//60,(sec%60),np.mean(self.win_ratio_list)))
             # if self.train_mode == True:
             #     if self.each_model == True:
             #         self.save_each_model()
@@ -985,6 +1022,7 @@ class Environment():
         #             self.vote_another_people[i] += 1
         self.last_declaration_vote_list[...] += self.declaration_vote_list
         self.last_vote_list[...] += self.vote_list
+        self.declaration_vote_list_for_fake[...] = self.declaration_vote_list
         self.declaration_vote_list.fill(0)
         self.vote_list.fill(0)
 
@@ -1027,10 +1065,10 @@ class Environment():
         #     self.myresult = 'DIVINED Agent[' + "{0:02d}".format(idx) + '] ' + 'HUMAN'
 
         if self.fake_role == 'SEER':
-            self.not_reported = True
+            # self.not_reported = True
             # self.divine_state = self.createXPredictData()
             mask = self.createMask()
-            self.divine_action = self.player.selectDivineAgent(self.state,mask)
+            self.divine_action = self.player.selectDivineAgent(self.vote_state,mask)
             # print(self.other_role)
             # print("result is ",self.divine_action)
             target = self.divine_action//2

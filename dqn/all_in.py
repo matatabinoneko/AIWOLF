@@ -15,8 +15,8 @@ import aiwolfpy.contentbuilder as cb
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-# from pytorch import *
-from pytorch_fake_divine_when_talk import *
+from pytorch import *
+# from pytorch_fake_divine_when_talk import *
 
 myname = 'matatabi'
 
@@ -25,15 +25,15 @@ class SampleAgent(object):
         ## myname ##
         self.myname = agent_name
         self.w_data = Environment(
-                                agent_num=5,
+                                agent_num=6,
                                 train_predict_mode=False,
-                                train_dqn_mode=True,
-                                train_divine_mode=True,
+                                train_dqn_mode=False,
+                                train_divine_mode=False,
                                 # explore = True,
-                                predict_net_load=True,
-                                dqn_net_load=False,
-                                divine_net_load=False,
-                                train_times=100000,
+                                predict_net_load=False,
+                                dqn_net_load=True,
+                                divine_net_load=True,
+                                train_times=10000,
                                 )
 
 

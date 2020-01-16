@@ -15,27 +15,36 @@ import aiwolfpy.contentbuilder as cb
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-# from pytorch import *
-from pytorch_fake_divine_when_talk import *
+from pytorch import *
+# from pytorch_fake_divine_when_talk import *
 
 myname = 'matatabi'
 
-class SampleAgent(object):
+
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from rule_base.randomPOSSESSED import SampleAgent as SA
+
+class SampleAgent(SA,object):
     def __init__(self, agent_name):
         ## myname ##
         self.myname = agent_name
         self.w_data = Environment(
-                                agent_num=5,
+                                agent_num=6,
                                 train_predict_mode=False,
-                                train_dqn_mode=True,
-                                train_divine_mode=True,
+                                train_dqn_mode=False,
+                                train_divine_mode=False,
                                 # explore = True,
                                 predict_net_load=True,
                                 dqn_net_load=False,
-                                divine_net_load=False,
-                                train_times=100000,
+                                divine_net_load=True,
+                                train_times=10000,
                                 )
+        # myname
 
+        super().__init__(agent_name)
 
 
 
@@ -44,9 +53,11 @@ class SampleAgent(object):
 
     def initialize(self, base_info, diff_data, game_setting):
         self.w_data.initialize(base_info, diff_data, game_setting)
+        super().initialize(base_info, diff_data, game_setting)
 
     def update(self, base_info, diff_data, request):
         self.w_data.update(base_info,diff_data,request)
+        super().update(base_info, diff_data, request)
 
 
     def dayStart(self):
@@ -61,7 +72,8 @@ class SampleAgent(object):
         return cb.over()
 
     def vote(self):
-        return self.w_data.vote()
+        # return self.w_data.vote()
+        return super().vote()
 
     def attack(self):
         return self.w_data.attack()

@@ -44,7 +44,7 @@ class Agent():
         self.divine_model = DivineModel(n_input=dqn_n_input,n_hidden=dqn_n_hidden,n_output=agent_num*2)
         self.last_pred_result = None
     
-        self.epsilon = 0.2
+        self.epsilon = 0.1
 
         if self.kanning==True:
             with open("../AIWolf-ver0.5.6/role.txt","r") as f:
@@ -174,6 +174,8 @@ class Agent():
                 return target*2 + role
 
     def selectDivineAgent(self,state,divinable_mask):
+        return self.randomDivineSelect(divinable_mask)
+
         if state is None:
             return self.randomDivineSelect(divinable_mask)
         self.divine_model.target_q_model.eval()
