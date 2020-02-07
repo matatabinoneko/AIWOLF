@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/src/jp/halfmoon/inaba/aiwolf/guess/Formation_Basic.java" charset="windows-31j" />
+    <file url="file://$PROJECT_DIR$/src/jp/halfmoon/inaba/aiwolf/guess/JudgeRecent.java" charset="windows-31j" />
+    <file url="file://$PROJECT_DIR$/src/jp/halfmoon/inaba/aiwolf/guess/Noise.java" charset="windows-31j" />
+    <file url="file://$PROJECT_DIR$/src/jp/halfmoon/inaba/aiwolf/lib/AdvanceGameInfo.java" charset="windows-31j" />
+    <file url="file://$PROJECT_DIR$/src/jp/halfmoon/inaba/aiwolf/request/RoleWeight.java" charset="windows-31j" />
+  </component>
+</project>
