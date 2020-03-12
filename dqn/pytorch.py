@@ -926,7 +926,7 @@ class Environment():
                 if self.divine_updatable == True:
                     self.player.update_divine_function()
 
-        if (self.train_cnt%100) == 0:
+        if (self.train_cnt%10) == 0:
             self.vote_updatable,self.divine_updatable = self.divine_updatable, self.vote_updatable
 
             

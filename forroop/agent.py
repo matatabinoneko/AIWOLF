@@ -37,8 +37,7 @@ class Agent():
         self.train_dqn_mode = train_dqn_mode
         self.train_divine_mode = train_divine_mode
         self.explore = explore
-        self.answer = []
-        self.kanning=False
+        self.kanning=True
         self.pred_model = PredictRole(pred_n_input,pred_n_hidden,agent_num,role_num)
         self.brain = Brain(n_input=dqn_n_input,n_hidden=dqn_n_hidden,n_output=dqn_n_output)
         self.divine_model = DivineModel(n_input=dqn_n_input,n_hidden=dqn_n_hidden,n_output=agent_num*2)
@@ -46,12 +45,14 @@ class Agent():
     
         self.epsilon = 0.1
 
-        # if self.kanning==True:
-        #     with open("../AIWolf-ver0.5.6/role.txt","r") as f:
-        #         for agent in f.readlines():
-        #             agent = agent.strip("\n")
-        #             self.answer.append(agent)
-
+        if self.agent_num <= 6:
+            self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2,"POSSESSED":3}   
+        elif self.agent_num == 7:
+            self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2}
+        elif self.agent_num <= 9:
+            self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2,"MEDIUM":5}
+        else:
+            self.role_to_num = {"VILLAGER":0,"SEER":1,"WEREWOLF":2,"POSSESSED":3,"BODYGUARD":4,"MEDIUM":5}   
     
     def update_pred_model(self):
         self.pred_model.train(agent_num=self.agent_num,role_num=self.role_num)
@@ -76,7 +77,17 @@ class Agent():
             return target
 
     def createDqnState(self,state):
-        pred_result = self.get_predict_output(state)
+        # print(self.kanning)
+        if self.kanning==True:
+            self.answer = []
+            with open("../AIWolf-server/role.txt","r") as f:
+                for agent in f.readlines():
+                    agent = agent.strip("\n")
+                    self.answer.append([i==self.role_to_num[agent] for i in range(self.role_num)])
+            self.answer = torch.FloatTensor(self.answer).view(1,-1)
+            pred_result = self.answer
+        else:
+            pred_result = self.get_predict_output(state)
         # return torch.FloatTensor(pred_result)
         # return torch.FloatTensor(state)
         return torch.cat((torch.FloatTensor(state),torch.FloatTensor(pred_result)),dim=1).float()

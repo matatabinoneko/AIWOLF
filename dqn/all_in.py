@@ -30,7 +30,7 @@ class SampleAgent(object):
                                 train_dqn_mode=False,
                                 train_divine_mode=False,
                                 # explore = True,
-                                predict_net_load=False,
+                                predict_net_load=True,
                                 dqn_net_load=True,
                                 divine_net_load=True,
                                 train_times=10000,

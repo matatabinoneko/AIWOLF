@@ -61,7 +61,15 @@ class modify_vector_data_info(data_info):
         else:
             self.utiwake = {"VILLAGER":8,"SEER":1,"POSSESSED":1,"WEREWOLF":3,"MEDIUM":1,"BODYGUARD":1}
 
+        self.num_to_role = {v:k for k,v in self.role_to_num.items()}
+        self.human_list = ["HUMAN","VILLAGER","SEER","BODYGUARD","MEDIUM"]
+        self.werewolf_list = ["WEREWOLF","POSSESSED"]
+        self.side_to_num = {"HUMAN":0,"VILLAGER":0,"SEER":0,"BODYGUARD":0,"MEDIUM":0,"POSSESSED":1,"WEREWOLF":1}
+        self.role_num = len(self.role_to_num)
 
+        self.max_day = self.agent_num  - (2*self.utiwake.get("WEREWOLF"))
+        self.day = np.zeros(self.max_day).astype(np.float32)
+        self.day[0] = 1
 
         self.declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
         self.last_declaration_vote_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
@@ -83,15 +91,20 @@ class modify_vector_data_info(data_info):
         self.disag_esti_list = np.zeros((self.agent_num,self.agent_num),dtype=np.int32)
 
         #新たな特徴量
-        self.myrole = np.zeros((self.role_num,1),dtype=np.int32)
+        self.my_role = np.zeros((self.role_num,1),dtype=np.int32)
         self.talk_cnt = np.zeros((self.agent_num,1),dtype=np.int32)
+        self.my_agent_id = np.zeros((self.agent_num),dtype=np.int32)
+        self.my_agent_id[-1] = 1
+        self.other_role = np.zeros((self.agent_num,2),dtype=np.float32)
 
 
         self.createDailyVector()
+        # self.createCommonVector()
         
-        self.player_vector_length = self.daily_vector.shape[1] + 1
-        self.daily_vector_length = self.daily_vector.shape[0]*self.daily_vector.shape[1] + 1 + self.daily_vector.shape[1]
-
+        # self.player_vector_length = self.daily_vector.shape[1] + 1
+        # self.daily_vector_length = self.daily_vector.shape[0]*self.daily_vector.shape[1] + 1 + self.daily_vector.shape[1]
+        self.daily_vector_length = 243
+        self.player_vector_length = 53
 
         self.role_cnt = defaultdict(int)
         self.predict_cnt = defaultdict(int)
@@ -127,11 +140,13 @@ class modify_vector_data_info(data_info):
     def createDailyVector(self):
         #カミングアウトのリスト　占い結果　占い師とカミングアウトした順番　前回の投票宣言　前回の投票先　生死情報　肯定的意見　否定的意見　発話の割合
         # print(self.talk_cnt/np.sum(self.talk_cnt))
-        if np.sum(self.talk_cnt) == 0:
-            self.daily_vector = np.hstack((self.co_list,self.divined_list.reshape(self.agent_num,-1),self.seer_co_oder.reshape(-1,1),self.last_declaration_vote_list,self.last_vote_list,self.alive_list,self.ag_esti_list,self.disag_esti_list,self.talk_cnt))
-        else:
-            self.daily_vector = np.hstack((self.co_list,self.divined_list.reshape(self.agent_num,-1),self.seer_co_oder.reshape(-1,1),self.last_declaration_vote_list,self.last_vote_list,self.alive_list,self.ag_esti_list,self.disag_esti_list,self.talk_cnt/np.sum(self.talk_cnt)))
+        # if np.sum(self.talk_cnt) == 0:
+        #     self.daily_vector = np.hstack((self.co_list,self.divined_list.reshape(self.agent_num,-1),self.seer_co_oder.reshape(-1,1),self.last_declaration_vote_list,self.last_vote_list,self.alive_list,self.ag_esti_list,self.disag_esti_list,self.talk_cnt))
+        # else:
+        # self.daily_vector = np.hstack((self.co_list,self.divined_list.reshape(self.agent_num,-1),self.seer_co_oder.reshape(-1,1),self.last_declaration_vote_list,self.last_vote_list,self.alive_list,self.ag_esti_list,self.disag_esti_list,self.talk_cnt/np.sum(self.talk_cnt)))
+        self.daily_vector = np.hstack((self.co_list,self.divined_list.reshape(self.agent_num,-1),self.seer_co_oder.reshape(-1,1),self.last_declaration_vote_list,self.last_vote_list,self.alive_list,self.ag_esti_list,self.disag_esti_list))
         # print(self.daily_vector.shape)
+
 
     def initialize(self, base_info, diff_data, game_setting):
         # super(self).initialize()
@@ -169,26 +184,37 @@ class modify_vector_data_info(data_info):
         self.alive_list.fill(0)
         self.alive_list[:,0] = 1
 
-        self.myrole[self.role_to_num[self.base_info["myRole"]]] = 1
         self.talk_cnt.fill(0)
 
         self.ag_esti_list.fill(0)
         self.disag_esti_list.fill(0)
 
-        self.daily_x = [[]]
+        self.daily_x = [[] for i in range(len(self.daily_net))]
         self.daily_t = [0 for i in range(self.agent_num)]
         self.player_x = [[]for i in range(self.agent_num)]
         self.player_t = [0 for i in range(self.agent_num)]
 
+        self.my_role.fill(0)
+        self.my_role[self.role_to_num[self.base_info["myRole"]]] = 1
+        self.my_agent_id.fill(0)
+        self.my_agent_id[self.base_info["agentIdx"]-1] = 1
+
+        self.other_role.fill(0)
+        for agent,role in self.base_info["roleMap"].items():
+            agent = int(agent)-1
+            self.other_role[agent][self.side_to_num[role]] = 1
+
     def createXDailyData(self):
-        common_vector = [self.base_info["day"]]
-        alpha_common_vector = self.daily_vector[self.base_info["agentIdx"]-1,:]
+        common_vector = self.day+self.other_role.reshape(-1).tolist()+self.my_role.reshape(-1).tolist()
+        # print(np.array(common_vector).shape)
+        # alpha_common_vector = self.daily_vector[self.base_info["agentIdx"]-1,:]
         self.createDailyVector()
         # print(np.hstack((self.daily_vector.reshape(-1),common_vector, alpha_common_vector)).astype(np.float32).shape)
-        return np.hstack((self.daily_vector.reshape(-1),common_vector, alpha_common_vector)).astype(np.float32)
+        # print(np.hstack((self.daily_vector.reshape(-1),common_vector, alpha_common_vector)).astype(np.float32))
+        return np.hstack((self.daily_vector.reshape(-1),common_vector,)).astype(np.float32)
 
     def createXPlayerData(self):
-        common_vector = [self.base_info["day"]]
+        common_vector = self.day+self.other_role.reshape(-1).tolist()+self.my_role.reshape(-1).tolist()
         self.createDailyVector()
         return np.hstack((self.daily_vector,np.tile(common_vector,(self.agent_num,1)))).astype(np.float32)
 
@@ -412,7 +438,7 @@ class modify_vector_data_info(data_info):
         player_x_data = self.createXPlayerData()
         for i in range(len(self.daily_vector)):
             self.player_x[self.base_info["day"]].append(player_x_data[i,:].tolist())
-        self.daily_x.append(self.createXDailyData().tolist())
+        self.daily_x[self.day].append(self.createXDailyData().tolist())
         # for i in range(len(self.daily_x)):
         #     print(len(self.daily_x[i]))
         # print(self.player_x)

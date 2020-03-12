@@ -151,7 +151,7 @@ class SampleAgent(object):
 
         self.game_cnt += 1
         if self.game_cnt%100 == 0:
-            print("game cnt is {}  win ratio is {:.3f}".format(self.game_cnt,np.mean(self.win_ratio_list)))
+            print("game cnt is {}  win ratio is {:.4f}".format(self.game_cnt,np.mean(self.win_ratio_list)))
         return None
     
 

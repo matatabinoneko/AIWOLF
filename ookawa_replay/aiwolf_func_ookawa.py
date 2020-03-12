@@ -818,7 +818,7 @@ class data_info():
             self.player_model_train()
         else:
             self.player_model_eval()
-
+        # print(self.train_cnt,self.train_times)
         if(self.train_cnt == self.train_times):
 
             if self.player_train == False:
@@ -910,6 +910,8 @@ class predict_werewolf():
 
     def train(self):
         x,t = self.memory.choice(10)
+        # print(np.array(x).shape)
+        # print(x)
         with chainer.using_config("train", True), chainer.using_config("enable_backprop", True):
             y = self.net(x)
             loss = F.sigmoid_cross_entropy(y,t)
